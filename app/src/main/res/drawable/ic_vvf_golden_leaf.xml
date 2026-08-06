@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Golden Leaf Outer Contour -->
+    <path
+        android:fillColor="#F47B20"
+        android:pathData="M54,12 C72,28 88,44 82,72 C76,92 54,96 54,96 C54,96 32,92 26,72 C20,44 36,28 54,12 Z" />
+
+    <!-- Inner Soft Gold Leaf Layer -->
+    <path
+        android:fillColor="#D4A95A"
+        android:pathData="M54,18 C68,32 80,46 75,68 C70,84 54,88 54,88 C54,88 38,84 33,68 C28,46 40,32 54,18 Z" />
+
+    <!-- Center Cosmic Blue Shield Core -->
+    <path
+        android:fillColor="#102B52"
+        android:pathData="M54,26 C64,36 72,48 68,64 C64,76 54,80 54,80 C54,80 44,76 40,64 C36,48 44,36 54,26 Z" />
+
+    <!-- Gold VVF Text Emblems -->
+    <!-- Letter V1 -->
+    <path
+        android:fillColor="#F47B20"
+        android:pathData="M42,42 L46,42 L49,58 L45,58 Z" />
+    <path
+        android:fillColor="#F47B20"
+        android:pathData="M49,58 L52,42 L55,42 L50,60 Z" />
+
+    <!-- Letter V2 -->
+    <path
+        android:fillColor="#D4A95A"
+        android:pathData="M53,42 L57,42 L60,58 L56,58 Z" />
+    <path
+        android:fillColor="#D4A95A"
+        android:pathData="M60,58 L63,42 L66,42 L61,60 Z" />
+
+    <!-- Letter F -->
+    <path
+        android:fillColor="#5BC0EB"
+        android:pathData="M65,42 L74,42 L74,46 L68,46 L68,50 L73,50 L73,54 L68,54 L68,60 L65,60 Z" />
+
+    <!-- Leaf Vein Central Accent -->
+    <path
+        android:fillColor="#3FA34D"
+        android:pathData="M53,62 L55,62 L55,84 L53,84 Z" />
+
+</vector>
