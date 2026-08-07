@@ -2,6 +2,10 @@
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 
+# Error Prone / Tink Annotations
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+
 # Room
 -keep class * extends androidx.room.RoomDatabase
 
