@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -22,19 +24,102 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `vault_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `originalName` TEXT NOT NULL, 
+                        `encryptedName` TEXT NOT NULL, 
+                        `encryptedFilePath` TEXT NOT NULL, 
+                        `ivBase64` TEXT NOT NULL, 
+                        `category` TEXT NOT NULL, 
+                        `sizeBytes` INTEGER NOT NULL, 
+                        `encryptedAtMs` INTEGER NOT NULL, 
+                        `isBiometricProtected` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `cloud_sync` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `provider` TEXT NOT NULL, 
+                        `fileName` TEXT NOT NULL, 
+                        `fileSize` INTEGER NOT NULL, 
+                        `status` TEXT NOT NULL, 
+                        `lastSyncedMs` INTEGER NOT NULL, 
+                        `isCore` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `plugins` (
+                        `pluginId` TEXT NOT NULL PRIMARY KEY, 
+                        `name` TEXT NOT NULL, 
+                        `category` TEXT NOT NULL, 
+                        `description` TEXT NOT NULL, 
+                        `isEnabled` INTEGER NOT NULL, 
+                        `isCore` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                addColumnIfNotExists(db, "files", "visualSimilarityHash", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfNotExists(db, "files", "semanticEmbeddingVersion", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfNotExists(db, "files", "semanticIndexed", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfNotExists(db, "files", "semanticEmbeddingString", "TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private fun addColumnIfNotExists(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String,
+            columnDefinition: String
+        ) {
+            val cursor = db.query("PRAGMA table_info($tableName)")
+            var exists = false
+            try {
+                while (cursor.moveToNext()) {
+                    val nameIndex = cursor.getColumnIndex("name")
+                    if (nameIndex != -1) {
+                        val name = cursor.getString(nameIndex)
+                        if (name.equals(columnName, ignoreCase = true)) {
+                            exists = true
+                            break
+                        }
+                    }
+                }
+            } finally {
+                cursor.close()
+            }
+            if (!exists) {
+                db.execSQL("ALTER TABLE `$tableName` ADD COLUMN `$columnName` $columnDefinition")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+                val builder = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "vvf_smart_manager_db"
                 )
                 .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
-                .fallbackToDestructiveMigration(true)
-                .build()
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+
+                if (com.example.BuildConfig.DEBUG) {
+                    builder.fallbackToDestructiveMigration(true)
+                }
+
+                val instance = builder.build()
                 INSTANCE = instance
                 instance
             }
         }
     }
 }
+

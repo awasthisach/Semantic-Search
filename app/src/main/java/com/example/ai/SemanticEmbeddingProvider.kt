@@ -60,14 +60,99 @@ interface SemanticEmbeddingProvider {
 }
 
 /**
- * Memory-safe Fallback Semantic Embedding Provider used when TFLite model is missing.
- * Avoids any JNI, Native Library loads, or ashmem operations.
+ * Lightweight, memory-safe On-Device Feature Embedding Engine.
+ * Generates normalized 128-dimensional dense vector space embeddings using character trigram
+ * feature hashing + word term-frequency weighting for text, and spatial color grid feature vectors for images.
+ */
+object LightweightEmbeddingEngine {
+    private const val DIMENSION = 128
+
+    fun generateTextEmbedding(text: String): FloatArray? {
+        if (text.isBlank()) return null
+        val vector = FloatArray(DIMENSION)
+        val cleanText = text.lowercase().trim()
+        val words = cleanText.split(Regex("[^a-z0-9_]+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return null
+
+        for (word in words) {
+            val wordHash = (word.hashCode() and 0x7FFFFFFF) % DIMENSION
+            vector[wordHash] += 2.0f
+
+            // Character trigrams for subword / fuzzy semantic similarity
+            if (word.length >= 3) {
+                for (i in 0..word.length - 3) {
+                    val tri = word.substring(i, i + 3)
+                    val triHash = (tri.hashCode() and 0x7FFFFFFF) % DIMENSION
+                    vector[triHash] += 1.0f
+                }
+            }
+        }
+
+        return normalize(vector)
+    }
+
+    fun generateImageEmbedding(file: File): FloatArray? {
+        if (!file.exists() || !file.canRead()) return null
+        val vector = FloatArray(DIMENSION)
+        val lowerName = file.name.lowercase()
+
+        try {
+            if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") || lowerName.endsWith(".webp") || lowerName.endsWith(".bmp")) {
+                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath, options)
+                if (bitmap != null) {
+                    val scaled = Bitmap.createScaledBitmap(bitmap, 8, 8, true)
+                    var idx = 0
+                    for (x in 0 until 8) {
+                        for (y in 0 until 8) {
+                            val pixel = scaled.getPixel(x, y)
+                            val r = (pixel shr 16 and 0xFF) / 255.0f
+                            val g = (pixel shr 8 and 0xFF) / 255.0f
+                            val b = (pixel and 0xFF) / 255.0f
+                            if (idx < DIMENSION - 2) {
+                                vector[idx++] += r
+                                vector[idx++] += g
+                                vector[idx++] += b
+                            }
+                        }
+                    }
+                    if (scaled != bitmap) scaled.recycle()
+                    bitmap.recycle()
+                    return normalize(vector)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("LightweightEmbedding", "Image feature extraction failed for ${file.name}: ${e.message}")
+        }
+
+        // Fallback for non-image files or failed decodes: generate text embedding from file name and size
+        return generateTextEmbedding("${file.name} ${file.length()}")
+    }
+
+    private fun normalize(vector: FloatArray): FloatArray {
+        var sumSq = 0.0f
+        for (v in vector) sumSq += v * v
+        val norm = sqrt(sumSq.toDouble()).toFloat()
+        if (norm > 0.0f) {
+            for (i in vector.indices) vector[i] /= norm
+        }
+        return vector
+    }
+}
+
+/**
+ * Memory-safe Fallback Semantic Embedding Provider.
+ * Uses lightweight on-device feature vector generation when TFLite model binary is absent.
  */
 class FallbackSemanticEmbeddingProvider : SemanticEmbeddingProvider {
     override val embeddingVersion: Int = 1
     override fun isModelLoaded(): Boolean = false
-    override suspend fun generateImageEmbedding(file: File): FloatArray? = null
-    override suspend fun generateTextEmbedding(text: String): FloatArray? = null
+    override suspend fun generateImageEmbedding(file: File): FloatArray? {
+        return LightweightEmbeddingEngine.generateImageEmbedding(file)
+    }
+    override suspend fun generateTextEmbedding(text: String): FloatArray? {
+        return LightweightEmbeddingEngine.generateTextEmbedding(text)
+    }
 }
 
 /**
@@ -208,9 +293,6 @@ class TFLiteSemanticEmbeddingProvider(
             Log.e("TFLiteSemantic", "OutOfMemoryError during image embedding inference for ${file.name}: ${e.message}")
             System.gc()
             null
-        } catch (e: java.io.IOException) {
-            Log.e("TFLiteSemantic", "IOException reading image file ${file.name}: ${e.message}")
-            null
         } catch (e: Exception) {
             Log.w("TFLiteSemantic", "Error during image embedding inference: ${e.message}")
             null
@@ -254,7 +336,7 @@ class TFLiteSemanticEmbeddingProvider(
         val maxTokens = 128
         val byteBuffer = ByteBuffer.allocateDirect(4 * maxTokens)
         byteBuffer.order(ByteOrder.nativeOrder())
-        val words = text.take(maxTokens * 10).split(Regex("\\s+"))
+        val words = text.take(maxTokens * 10).lowercase().split(Regex("\\s+"))
         for (i in 0 until maxTokens) {
             val tokenVal = if (i < words.size) (words[i].hashCode() and 0x7FFFFFFF) % 10000 else 0
             byteBuffer.putFloat(tokenVal.toFloat())

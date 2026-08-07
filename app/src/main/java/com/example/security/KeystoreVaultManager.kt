@@ -122,21 +122,62 @@ class KeystoreVaultManager {
     }
 
     /**
-     * Secure SHA-256 PIN Hashing with Salt
+     * Secure PIN Hashing with Random Salt using PBKDF2WithHmacSHA256
      */
-    fun hashPin(pin: String, salt: String = "VVF_SMART_MANAGER_SALT"): String {
+    fun hashPin(pin: String): String {
+        val salt = ByteArray(16).apply { java.security.SecureRandom().nextBytes(this) }
+        val iterations = 10000
+        val hash = pbkdf2(pin, salt, iterations) ?: throw IllegalStateException("PBKDF2 derivation failed")
+        val saltHex = salt.joinToString("") { "%02x".format(it) }
+        val hashHex = hash.joinToString("") { "%02x".format(it) }
+        return "$iterations:$saltHex:$hashHex"
+    }
+
+    fun verifyPin(inputPin: String, storedHash: String): Boolean {
+        if (storedHash.isBlank()) return false
+        val parts = storedHash.split(":")
+        if (parts.size != 3) {
+            // Legacy / fallback hash verification for backwards compatibility
+            val legacyHash = hashLegacySha256(inputPin, "VVF_SMART_MANAGER_SALT")
+            return MessageDigest.isEqual(
+                legacyHash.lowercase().toByteArray(Charsets.UTF_8),
+                storedHash.lowercase().toByteArray(Charsets.UTF_8)
+            )
+        }
+        val iterations = parts[0].toIntOrNull() ?: return false
+        val salt = hexToByteArray(parts[1]) ?: return false
+        val expectedHash = hexToByteArray(parts[2]) ?: return false
+        
+        val computedHash = pbkdf2(inputPin, salt, iterations) ?: return false
+        return MessageDigest.isEqual(computedHash, expectedHash)
+    }
+
+    private fun pbkdf2(pin: String, salt: ByteArray, iterations: Int): ByteArray? {
+        return try {
+            val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iterations, 256)
+            val skf = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            skf.generateSecret(spec).encoded
+        } catch (e: Exception) {
+            Log.e(TAG, "PBKDF2 failed", e)
+            null
+        }
+    }
+
+    private fun hashLegacySha256(pin: String, salt: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val combined = "$salt:$pin".toByteArray(Charsets.UTF_8)
         val hash = digest.digest(combined)
         return hash.joinToString("") { "%02x".format(it) }
     }
 
-    fun verifyPin(inputPin: String, storedHash: String, salt: String = "VVF_SMART_MANAGER_SALT"): Boolean {
-        if (storedHash.isBlank()) return false
-        val computedHash = hashPin(inputPin, salt)
-        return MessageDigest.isEqual(
-            computedHash.lowercase().toByteArray(Charsets.UTF_8),
-            storedHash.lowercase().toByteArray(Charsets.UTF_8)
-        )
+    private fun hexToByteArray(hex: String): ByteArray? {
+        if (hex.length % 2 != 0) return null
+        val result = ByteArray(hex.length / 2)
+        for (i in result.indices) {
+            val index = i * 2
+            val j = hex.substring(index, index + 2).toIntOrNull(16) ?: return null
+            result[i] = j.toByte()
+        }
+        return result
     }
 }

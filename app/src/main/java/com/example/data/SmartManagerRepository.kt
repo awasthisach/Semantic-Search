@@ -2,11 +2,8 @@
 package com.example.data
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.util.Base64
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.example.ai.SemanticEmbeddingProvider
 import com.example.ai.FallbackSemanticEmbeddingProvider
 import com.example.ai.TFLiteSemanticEmbeddingProvider
@@ -36,6 +33,10 @@ open class SmartManagerRepository(
     val keystoreVaultManager = KeystoreVaultManager()
     val storageScanner = StorageScanner(context)
 
+    // Extracted Single-Responsibility Engine Components
+    private val ocrEngine = OcrEngine(context)
+    private val vaultManagerEngine = VaultManagerEngine(context, keystoreVaultManager)
+
     private fun isAssetExists(context: Context, fileName: String): Boolean {
         return try {
             context.assets.open(fileName).use { }
@@ -43,37 +44,6 @@ open class SmartManagerRepository(
         } catch (e: Exception) {
             false
         }
-    }
-
-    private fun runMockOcrHeuristics(fileName: String): String {
-        val cleanName = fileName.substringBeforeLast('.')
-        val sb = java.lang.StringBuilder()
-        
-        if (cleanName.contains("invoice", ignoreCase = true) || cleanName.contains("tax", ignoreCase = true) || cleanName.contains("bill", ignoreCase = true)) {
-            val invoiceId = (cleanName.hashCode() and 0x7FFFFFFF) % 90000 + 10000
-            val amount = ((cleanName.hashCode() and 0x7FFFFFFF) % 450 + 10) * 100
-            sb.append("Tax Invoice GSTIN 27AAACV${invoiceId}F1Z1 ")
-            sb.append("Amount $amount INR ")
-            sb.append("Date ${10 + (invoiceId % 18)} March 2026 ")
-            sb.append("Billed to VVF Smart Manager Client ")
-        } else if (cleanName.contains("receipt", ignoreCase = true) || cleanName.contains("payment", ignoreCase = true)) {
-            val receiptId = (cleanName.hashCode() and 0x7FFFFFFF) % 9000 + 1000
-            val amount = ((cleanName.hashCode() and 0x7FFFFFFF) % 150 + 5) * 50
-            sb.append("Transaction Receipt ID ${receiptId} ")
-            sb.append("Paid Amount $amount USD ")
-            sb.append("Merchant Services Inc ")
-        } else if (cleanName.contains("blueprint", ignoreCase = true) || cleanName.contains("design", ignoreCase = true) || cleanName.contains("architecture", ignoreCase = true)) {
-            sb.append("VVF Smart Manager Design Architecture Diagram Specification ")
-            sb.append("Module Components and Relational Entity Database Tables Schema ")
-        } else {
-            val words = cleanName.split('_', '-', ' ')
-                .filter { it.length > 2 }
-                .joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
-            if (words.isNotBlank()) {
-                sb.append("Scanned document content containing keywords: $words")
-            }
-        }
-        return sb.toString().trim()
     }
 
     val tfliteProvider: SemanticEmbeddingProvider by lazy {
@@ -86,6 +56,10 @@ open class SmartManagerRepository(
         } else {
             FallbackSemanticEmbeddingProvider()
         }
+    }
+
+    private val duplicateDetectionEngine by lazy {
+        DuplicateDetectionEngine(storageScanner, tfliteProvider)
     }
 
     private val repositoryExceptionHandler = CoroutineScope(Dispatchers.IO + Job() + kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
@@ -104,9 +78,42 @@ open class SmartManagerRepository(
     val recentFiles: Flow<List<FileItemEntity>> = dao.getRecentFiles()
     val categoryStats: Flow<List<CategoryStat>> = dao.getCategoryStats()
     val ocrScannedFiles: Flow<List<FileItemEntity>> = dao.getOcrScannedFiles()
+
     suspend fun getFileById(id: Long) = dao.getFileById(id)
     suspend fun getFileByName(name: String) = dao.getFileByName(name)
-    fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> = dao.searchSemanticFiles(query)
+
+    fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> {
+        if (query.isBlank()) return dao.getAllActiveFiles()
+        return dao.getAllActiveFiles().map { files ->
+            val queryVec = tfliteProvider.generateTextEmbedding(query)
+            if (queryVec == null) {
+                files.filter { file ->
+                    file.name.contains(query, ignoreCase = true) ||
+                    file.ocrText.contains(query, ignoreCase = true) ||
+                    file.tags.contains(query, ignoreCase = true)
+                }
+            } else {
+                files.mapNotNull { file ->
+                    val fileVec = tfliteProvider.stringToFloatArray(file.semanticEmbeddingString)
+                        ?: tfliteProvider.generateTextEmbedding("${file.name} ${file.ocrText} ${file.tags}")
+                    if (fileVec != null) {
+                        val sim = tfliteProvider.calculateCosineSimilarity(queryVec, fileVec)
+                        val isTextMatch = file.name.contains(query, ignoreCase = true) ||
+                                         file.ocrText.contains(query, ignoreCase = true) ||
+                                         file.tags.contains(query, ignoreCase = true)
+                        if (sim > 0.10f || isTextMatch) {
+                            file to sim
+                        } else null
+                    } else if (file.name.contains(query, ignoreCase = true) ||
+                               file.ocrText.contains(query, ignoreCase = true) ||
+                               file.tags.contains(query, ignoreCase = true)) {
+                        file to 0.5f
+                    } else null
+                }.sortedByDescending { it.second }.map { it.first }
+            }
+        }
+    }
+
     val recycleBinFiles: Flow<List<FileItemEntity>> = dao.getRecycleBinFiles()
     val vaultItems: Flow<List<VaultItemEntity>> = dao.getAllVaultItems()
     val cloudSyncItems: Flow<List<CloudSyncItemEntity>> = dao.getCloudSyncItems()
@@ -155,12 +162,12 @@ open class SmartManagerRepository(
                     chunk.forEach { file ->
                         ensureActive()
                         var updated = file
-                        // Heuristic on-device OCR simulation when OCR Engine Plugin is enabled
+                        // On-device ML Kit OCR text extraction when OCR Engine Plugin is enabled
                         if (isOcrEnabled && updated.ocrText.isBlank() && 
                             (updated.category == FileCategory.IMAGES.name || updated.category == FileCategory.DOCUMENTS.name)) {
-                            val mockOcr = runMockOcrHeuristics(updated.name)
-                            if (mockOcr.isNotBlank()) {
-                                updated = updated.copy(ocrText = mockOcr)
+                            val realOcr = ocrEngine.extractRealOcrText(updated.path)
+                            if (realOcr.isNotBlank()) {
+                                updated = updated.copy(ocrText = realOcr)
                             }
                         }
                         // Incremental SHA-256 calculation
@@ -207,21 +214,23 @@ open class SmartManagerRepository(
                                 }
                             }
                         }
-                        // Step 6: Incremental TFLite Semantic Embedding inference
+                        // Step 6: Incremental On-Device AI Semantic Embedding inference
                         if (!updated.semanticIndexed) {
                             val javaFile = File(updated.path)
-                            if (javaFile.exists() && javaFile.canRead() && tfliteProvider.isModelLoaded()) {
-                                val embedding = tfliteProvider.generateImageEmbedding(javaFile)
-                                if (embedding != null) {
-                                    val embStr = tfliteProvider.floatArrayToString(embedding)
-                                    updated = updated.copy(
-                                        semanticEmbeddingVersion = tfliteProvider.embeddingVersion,
-                                        semanticIndexed = true,
-                                        semanticEmbeddingString = embStr
-                                    )
-                                } else {
-                                    updated = updated.copy(semanticIndexed = true)
-                                }
+                            val textContent = "${updated.name} ${updated.ocrText} ${updated.tags}".trim()
+                            val embedding = if (javaFile.exists() && javaFile.canRead()) {
+                                tfliteProvider.generateImageEmbedding(javaFile) ?: tfliteProvider.generateTextEmbedding(textContent)
+                            } else {
+                                tfliteProvider.generateTextEmbedding(textContent)
+                            }
+
+                            if (embedding != null) {
+                                val embStr = tfliteProvider.floatArrayToString(embedding)
+                                updated = updated.copy(
+                                    semanticEmbeddingVersion = tfliteProvider.embeddingVersion,
+                                    semanticIndexed = true,
+                                    semanticEmbeddingString = embStr
+                                )
                             } else {
                                 updated = updated.copy(semanticIndexed = true)
                             }
@@ -247,155 +256,18 @@ open class SmartManagerRepository(
         }
     }
 
-    /**
-     * Real Perceptual Image Duplicate Detection using dHash (Difference Hash) and Hamming Distance.
-     * Evaluates valid dHashes in memory without blocking UI thread.
-     */
     fun getVisualDuplicates(similarityThresholdFlow: Flow<Float>): Flow<List<DuplicateGroup>> {
-        return combine(dao.getAllActiveFiles(), similarityThresholdFlow) { files, threshold ->
-            withContext(Dispatchers.IO) {
-                val validImages = files.filter { 
-                    it.category == FileCategory.IMAGES.name && 
-                    !it.isVault && 
-                    !it.isRecycleBin && 
-                    it.visualSimilarityHash.length == 16 
-                }
-
-                val thresholdInt = threshold.toInt().coerceIn(50, 100)
-                val maxDistance = ((100 - thresholdInt) * 64) / 100
-
-                clusterImagesBydHash(validImages, maxDistance)
-            }
-        }
+        return duplicateDetectionEngine.getVisualDuplicates(dao.getAllActiveFiles(), similarityThresholdFlow)
     }
 
-    private fun clusterImagesBydHash(
-        validImages: List<FileItemEntity>,
-        maxHammingDistance: Int
-    ): List<DuplicateGroup> {
-        val visited = mutableSetOf<Long>()
-        val resultGroups = mutableListOf<DuplicateGroup>()
-
-        for (i in validImages.indices) {
-            val file1 = validImages[i]
-            if (visited.contains(file1.id)) continue
-
-            val cluster = mutableListOf(file1)
-            var minDistanceInCluster = 64
-
-            for (j in i + 1 until validImages.size) {
-                val file2 = validImages[j]
-                if (visited.contains(file2.id)) continue
-
-                val distance = storageScanner.calculateHammingDistance(file1.visualSimilarityHash, file2.visualSimilarityHash)
-                if (distance in 0..maxHammingDistance) {
-                    cluster.add(file2)
-                    if (distance < minDistanceInCluster) {
-                        minDistanceInCluster = distance
-                    }
-                }
-            }
-
-            if (cluster.size > 1) {
-                cluster.forEach { visited.add(it.id) }
-                val avgScore = if (minDistanceInCluster < 64) ((64 - minDistanceInCluster) * 100) / 64 else 100
-                resultGroups.add(
-                    DuplicateGroup(
-                        title = "Perceptual Image Match (${avgScore}% Visual Similarity): ${file1.name}",
-                        level = 2,
-                        similarityScore = avgScore,
-                        files = cluster
-                    )
-                )
-            }
-        }
-        return resultGroups
-    }
-
-    /**
-     * Step 7: Real Video Duplicate Engine using Keyframe dHash and Hamming Distance.
-     */
     fun getVideoDuplicates(similarityThresholdFlow: Flow<Float>): Flow<List<DuplicateGroup>> {
-        return combine(dao.getAllActiveFiles(), similarityThresholdFlow) { files, threshold ->
-            withContext(Dispatchers.IO) {
-                val validVideos = files.filter {
-                    it.category == FileCategory.VIDEO.name &&
-                    !it.isVault &&
-                    !it.isRecycleBin &&
-                    it.visualSimilarityHash.length == 16
-                }
-
-                val thresholdInt = threshold.toInt().coerceIn(50, 100)
-                val maxDistance = ((100 - thresholdInt) * 64) / 100
-
-                val visited = mutableSetOf<Long>()
-                val resultGroups = mutableListOf<DuplicateGroup>()
-
-                for (i in validVideos.indices) {
-                    val file1 = validVideos[i]
-                    if (visited.contains(file1.id)) continue
-
-                    val cluster = mutableListOf(file1)
-                    var minDistanceInCluster = 64
-
-                    for (j in i + 1 until validVideos.size) {
-                        val file2 = validVideos[j]
-                        if (visited.contains(file2.id)) continue
-
-                        val distance = storageScanner.calculateHammingDistance(file1.visualSimilarityHash, file2.visualSimilarityHash)
-                        if (distance in 0..maxDistance) {
-                            cluster.add(file2)
-                            if (distance < minDistanceInCluster) {
-                                minDistanceInCluster = distance
-                            }
-                        }
-                    }
-
-                    if (cluster.size > 1) {
-                        cluster.forEach { visited.add(it.id) }
-                        val avgScore = if (minDistanceInCluster < 64) ((64 - minDistanceInCluster) * 100) / 64 else 100
-                        resultGroups.add(
-                            DuplicateGroup(
-                                title = "Keyframe Match (${avgScore}% Video Similarity): ${file1.name}",
-                                level = 2,
-                                similarityScore = avgScore,
-                                files = cluster
-                            )
-                        )
-                    }
-                }
-                resultGroups
-            }
-        }
+        return duplicateDetectionEngine.getVideoDuplicates(dao.getAllActiveFiles(), similarityThresholdFlow)
     }
 
-    /**
-     * Phase 7 Step 1: Real Document Duplicate Engine based on lightweight document fingerprints & SHA matching.
-     */
     fun getDocumentDuplicates(): Flow<List<DuplicateGroup>> {
-        return dao.getAllActiveFiles().map { files ->
-            val docs = files.filter {
-                it.category == FileCategory.DOCUMENTS.name &&
-                !it.isVault &&
-                !it.isRecycleBin &&
-                it.visualSimilarityHash.isNotBlank()
-            }
-            docs.groupBy { it.visualSimilarityHash }
-                .filter { it.value.size > 1 && it.key.isNotBlank() }
-                .map { (fp, duplicateList) ->
-                    DuplicateGroup(
-                        title = "Document Fingerprint Match: ${duplicateList.first().name}",
-                        level = 1,
-                        similarityScore = 100,
-                        files = duplicateList
-                    )
-                }
-        }.flowOn(Dispatchers.Default)
+        return duplicateDetectionEngine.getDocumentDuplicates(dao.getAllActiveFiles())
     }
 
-    /**
-     * Phase 7 Step 1: Real-time Document Indexing Statistics (Indexed Count, Pending Count, Progress Ratio).
-     */
     val documentStats: Flow<Triple<Int, Int, Float>> = dao.getAllActiveFiles().map { files ->
         val docs = files.filter { it.category == FileCategory.DOCUMENTS.name && !it.isVault && !it.isRecycleBin }
         val total = docs.size
@@ -405,63 +277,8 @@ open class SmartManagerRepository(
         Triple(indexed, pending, progress)
     }.flowOn(Dispatchers.Default)
 
-    /**
-     * Step 6: Real AI Semantic Duplicate Detection using Vector Cosine Similarity.
-     */
     fun getSemanticDuplicates(similarityThresholdFlow: Flow<Float>): Flow<List<DuplicateGroup>> {
-        return combine(dao.getAllActiveFiles(), similarityThresholdFlow) { files, threshold ->
-            withContext(Dispatchers.IO) {
-                val indexedFiles = files.filter {
-                    !it.isVault &&
-                    !it.isRecycleBin &&
-                    it.semanticEmbeddingString.isNotBlank()
-                }
-
-                val parsedVectors = indexedFiles.mapNotNull { file ->
-                    val arr = tfliteProvider.stringToFloatArray(file.semanticEmbeddingString)
-                    if (arr != null) file to arr else null
-                }
-
-                val minSimilarity = (threshold.coerceIn(50f, 100f)) / 100.0f
-                val visited = mutableSetOf<Long>()
-                val resultGroups = mutableListOf<DuplicateGroup>()
-
-                for (i in parsedVectors.indices) {
-                    val (file1, vec1) = parsedVectors[i]
-                    if (visited.contains(file1.id)) continue
-
-                    val cluster = mutableListOf(file1)
-                    var maxScoreInCluster = 0.0f
-
-                    for (j in i + 1 until parsedVectors.size) {
-                        val (file2, vec2) = parsedVectors[j]
-                        if (visited.contains(file2.id)) continue
-
-                        val similarity = tfliteProvider.calculateCosineSimilarity(vec1, vec2)
-                        if (similarity >= minSimilarity) {
-                            cluster.add(file2)
-                            if (similarity > maxScoreInCluster) {
-                                maxScoreInCluster = similarity
-                            }
-                        }
-                    }
-
-                    if (cluster.size > 1) {
-                        cluster.forEach { visited.add(it.id) }
-                        val pctScore = (maxScoreInCluster * 100).toInt()
-                        resultGroups.add(
-                            DuplicateGroup(
-                                title = "AI Vector Match (${pctScore}% Semantic Similarity): ${file1.name}",
-                                level = 3,
-                                similarityScore = pctScore,
-                                files = cluster
-                            )
-                        )
-                    }
-                }
-                resultGroups
-            }
-        }
+        return duplicateDetectionEngine.getSemanticDuplicates(dao.getAllActiveFiles(), similarityThresholdFlow)
     }
 
     init {
@@ -489,7 +306,7 @@ open class SmartManagerRepository(
                     path = "/storage/emulated/0/Downloads/Tax_Invoice_2026_copy.pdf",
                     category = FileCategory.DOCUMENTS.name,
                     sizeBytes = 2_450_000L,
-                    md5Hash = "a3f5c9e12084b1198402c842e", // exact hash match
+                    md5Hash = "a3f5c9e12084b1198402c842e",
                     ocrText = "Tax Invoice GSTIN 27AAACV1234F1Z1 Amount 14,250 INR Date 15 March 2026",
                     tags = "Tax, Invoice, Backup",
                     visualSimilarityHash = "sim_doc_tax_90"
@@ -725,50 +542,16 @@ open class SmartManagerRepository(
         }
     }
 
-    private val vaultPrefs: SharedPreferences by lazy {
-        try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            EncryptedSharedPreferences.create(
-                context,
-                "vvf_vault_prefs",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            Log.e("SmartManagerRepository", "EncryptedSharedPreferences init failed, falling back to standard SharedPreferences: ${e.message}")
-            context.getSharedPreferences("vvf_vault_prefs", Context.MODE_PRIVATE)
-        }
-    }
-
-    /**
-     * Gets the stored SHA-256 PIN hash or defaults to "1234" hash.
-     */
     fun getStoredVaultPinHash(): String {
-        return vaultPrefs.getString("vault_pin_hash", null) ?: keystoreVaultManager.hashPin("1234")
+        return vaultManagerEngine.getStoredVaultPinHash()
     }
 
-    /**
-     * Secure PIN Verification using SHA-256 Salted Hashing & SharedPreferences Persistence
-     */
     open fun verifyVaultPin(inputPin: String, storedHash: String = ""): Boolean {
-        val expectedHash = if (storedHash.isNotBlank()) storedHash else getStoredVaultPinHash()
-        return keystoreVaultManager.verifyPin(inputPin, expectedHash)
+        return vaultManagerEngine.verifyVaultPin(inputPin, storedHash)
     }
 
-    /**
-     * Changes and persists new Vault PIN after validating the old PIN.
-     */
     open fun changeVaultPin(oldPin: String, newPin: String): Boolean {
-        if (verifyVaultPin(oldPin) && newPin.length == 4) {
-            val newHash = keystoreVaultManager.hashPin(newPin)
-            vaultPrefs.edit().putString("vault_pin_hash", newHash).commit()
-            return true
-        }
-        return false
+        return vaultManagerEngine.changeVaultPin(oldPin, newPin)
     }
 
     suspend fun getFilteredFilesPaged(category: String?, query: String, limit: Int, offset: Int): List<FileItemEntity> = withContext(Dispatchers.IO) {
@@ -812,9 +595,6 @@ open class SmartManagerRepository(
         }
     }
 
-    /**
-     * Releases resource-heavy components like the on-device TFLite interpreter when memory is pressured.
-     */
     fun trimMemory() {
         try {
             if (tfliteProvider is com.example.ai.TFLiteSemanticEmbeddingProvider) {
@@ -826,9 +606,6 @@ open class SmartManagerRepository(
         }
     }
 
-    /**
-     * WorkManager Task Triggers for Background File Management (Duplicate Cleanup, Cloud Sync, Indexing, Cache Cleanup)
-     */
     fun enqueueDuplicateCleanupWork() {
         try {
             val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.DuplicateCleanupWorker>().build()
