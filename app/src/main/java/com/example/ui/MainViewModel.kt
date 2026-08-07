@@ -314,6 +314,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    @JvmName("processPickedJavaFiles")
+    fun processPickedLocalFiles(files: List<java.io.File>) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val entities = files.map { file ->
+                FileItemEntity(
+                    name = file.name,
+                    path = file.absolutePath,
+                    category = inferCategoryFromFilename(file.name),
+                    sizeBytes = if (file.exists()) file.length() else 1024L,
+                    tags = "Local_Import"
+                )
+            }
+            repository.insertFiles(entities)
+            resetPagination()
+            repository.enqueueBackgroundIndexWork()
+        }
+    }
+
     fun processPickedUris(uris: List<android.net.Uri>) {
         viewModelScope.launch(coroutineExceptionHandler) {
             val context = getApplication<Application>().applicationContext
