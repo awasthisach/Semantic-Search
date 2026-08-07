@@ -75,10 +75,13 @@ import com.example.ui.MainViewModel
 import com.example.ui.theme.BhagwaOrange
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SkyCyan
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.UploadFile
 import com.example.ui.components.FilePickerSheet
-import com.example.ui.components.LocalFilePickerCard
 
 @Composable
 fun FileManagerScreen(
@@ -573,3 +576,65 @@ fun FileManagerItemRow(modifier: Modifier = Modifier,
         )
     }
 }
+
+@Composable
+fun LocalFilePickerCard(
+    onFilesPicked: (List<Uri>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onFilesPicked(uris)
+        }
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = BhagwaOrange.copy(alpha = 0.12f)
+        ),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { launcher.launch(arrayOf("*/*")) }
+            .testTag("local_file_picker_card")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.UploadFile,
+                    contentDescription = null,
+                    tint = BhagwaOrange,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Pick Local Storage Files",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Select documents, photos, audio & videos",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = null,
+                tint = BhagwaOrange
+            )
+        }
+    }
+}
+

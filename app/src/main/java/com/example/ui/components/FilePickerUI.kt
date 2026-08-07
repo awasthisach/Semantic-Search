@@ -453,6 +453,8 @@ fun PickableFileRowItem(
     }
 }
 
+
+
 private fun getCategoryIcon(category: FileCategory): ImageVector {
     return when (category) {
         FileCategory.IMAGES -> Icons.Default.Image
