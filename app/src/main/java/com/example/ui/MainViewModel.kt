@@ -13,6 +13,7 @@ import com.example.data.FileItemEntity
 import com.example.data.PluginEntity
 import com.example.data.SmartManagerRepository
 import com.example.data.VaultItemEntity
+import com.example.ui.components.PickableLocalFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -295,7 +296,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Process Files Selected from FilePickerUI
-    fun processPickedLocalFiles(pickedFiles: List<com.example.ui.components.PickableLocalFile>) {
+    fun processPickedLocalFiles(pickedFiles: List<PickableLocalFile>) {
         viewModelScope.launch(coroutineExceptionHandler) {
             val entities = pickedFiles.map { picked ->
                 FileItemEntity(

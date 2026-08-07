@@ -78,6 +78,7 @@ import com.example.ui.theme.SkyCyan
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.UploadFile
 import com.example.ui.components.FilePickerSheet
+import com.example.ui.components.LocalFilePickerCard
 
 @Composable
 fun FileManagerScreen(
@@ -296,7 +297,7 @@ fun FileManagerScreen(
             }
         }
         // Local File Picker Component
-        com.example.ui.components.LocalFilePickerCard(
+        LocalFilePickerCard(
             onFilesPicked = { uris -> viewModel.processPickedUris(uris) },
             modifier = Modifier.padding(bottom = 12.dp)
         )
