@@ -14,12 +14,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 
-class OcrEngine(private val context: Context) {
+interface OcrEngine {
+    suspend fun extractRealOcrText(filePath: String): String
+}
+
+class MLKitOcrEngine(private val context: Context) : OcrEngine {
     private val textRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
-    suspend fun extractRealOcrText(filePath: String): String = withContext(Dispatchers.IO) {
+    override suspend fun extractRealOcrText(filePath: String): String = withContext(Dispatchers.IO) {
         val file = File(filePath)
         if (!file.exists() || !file.canRead()) return@withContext ""
 
@@ -41,7 +45,7 @@ class OcrEngine(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("OcrEngine", "PDF page rendering for OCR failed on $filePath: ${e.message}")
+                Log.e("MLKitOcrEngine", "PDF page rendering for OCR failed on $filePath: ${e.message}")
             }
         }
 
@@ -63,7 +67,7 @@ class OcrEngine(private val context: Context) {
                     continuation.resume(visionText.text)
                 }
                 .addOnFailureListener { e ->
-                    Log.e("OcrEngine", "ML Kit text recognition failed on $filePath: ${e.message}")
+                    Log.e("MLKitOcrEngine", "ML Kit text recognition failed on $filePath: ${e.message}")
                     continuation.resume("")
                 }
         }

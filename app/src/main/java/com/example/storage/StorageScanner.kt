@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 
-class StorageScanner(private val context: Context) {
+class StorageScanner(private val context: Context) : HammingDistanceCalculator {
 
     companion object {
         private const val TAG = "StorageScanner"
@@ -330,7 +330,7 @@ class StorageScanner(private val context: Context) {
         return ext in listOf("jpg", "jpeg", "png", "webp", "heic", "bmp", "gif")
     }
 
-    fun calculateHammingDistance(hash1: String, hash2: String): Int {
+    override fun calculateHammingDistance(hash1: String, hash2: String): Int {
         if (hash1.length != 16 || hash2.length != 16) return -1
         return try {
             val val1 = hash1.toULong(16)

@@ -28,13 +28,14 @@ import java.io.File
 
 open class SmartManagerRepository(
     private val context: Context,
-    private val dao: FileDao = AppDatabase.getDatabase(context).fileDao()
+    private val dao: FileDao = AppDatabase.getDatabase(context).fileDao(),
+    private val ocrEngine: OcrEngine? = null
 ) {
     val keystoreVaultManager = KeystoreVaultManager()
     val storageScanner = StorageScanner(context)
 
     // Extracted Single-Responsibility Engine Components
-    private val ocrEngine = OcrEngine(context)
+    private val activeOcrEngine: OcrEngine by lazy { ocrEngine ?: MLKitOcrEngine(context) }
     private val vaultManagerEngine = VaultManagerEngine(context, keystoreVaultManager)
 
     private fun isAssetExists(context: Context, fileName: String): Boolean {
@@ -165,7 +166,7 @@ open class SmartManagerRepository(
                         // On-device ML Kit OCR text extraction when OCR Engine Plugin is enabled
                         if (isOcrEnabled && updated.ocrText.isBlank() && 
                             (updated.category == FileCategory.IMAGES.name || updated.category == FileCategory.DOCUMENTS.name)) {
-                            val realOcr = ocrEngine.extractRealOcrText(updated.path)
+                            val realOcr = activeOcrEngine.extractRealOcrText(updated.path)
                             if (realOcr.isNotBlank()) {
                                 updated = updated.copy(ocrText = realOcr)
                             }

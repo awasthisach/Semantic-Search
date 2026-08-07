@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.ai.TFLiteSemanticEmbeddingProvider
 import com.example.storage.StorageScanner
+import com.example.data.DuplicateGroup
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -185,5 +187,127 @@ class ExampleUnitTest {
     val parsed = provider.stringToFloatArray(str)
     assertNotNull(parsed)
     assertArrayEquals(original, parsed!!, 0.0001f)
+  }
+
+  @Test
+  fun test_duplicateDetectionEngine_lsh_visualDuplicates() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val scanner = StorageScanner(context)
+    val provider = TFLiteSemanticEmbeddingProvider()
+    val engine = com.example.data.DuplicateDetectionEngine(scanner, provider)
+
+    // Build lists of FileItemEntity elements to check dHash bucketing and Hamming distances
+    val fileList = listOf(
+      com.example.data.FileItemEntity(
+        id = 101L,
+        name = "image_original.jpg",
+        path = "/storage/emulated/0/DCIM/image_original.jpg",
+        category = com.example.data.FileCategory.IMAGES.name,
+        sizeBytes = 150000L,
+        visualSimilarityHash = "a1b2c3d4e5f60718" // Hex representation
+      ),
+      com.example.data.FileItemEntity(
+        id = 102L,
+        name = "image_duplicate.jpg",
+        path = "/storage/emulated/0/DCIM/image_duplicate.jpg",
+        category = com.example.data.FileCategory.IMAGES.name,
+        sizeBytes = 151000L,
+        visualSimilarityHash = "a1b2c3d4e5f60719" // 1 bit distance
+      ),
+      com.example.data.FileItemEntity(
+        id = 103L,
+        name = "image_different.jpg",
+        path = "/storage/emulated/0/DCIM/image_different.jpg",
+        category = com.example.data.FileCategory.IMAGES.name,
+        sizeBytes = 250000L,
+        visualSimilarityHash = "ffffffffffffffff" // Different LSH buckets & distance
+      )
+    )
+
+    val activeFilesFlow = kotlinx.coroutines.flow.flowOf(fileList)
+    val similarityThresholdFlow = kotlinx.coroutines.flow.flowOf(95f) // High similarity
+
+    val duplicatesList = engine.getVisualDuplicates(activeFilesFlow, similarityThresholdFlow).first()
+
+    // LSH buckets should partition first two together, and ignore the third completely different file
+    assertEquals(1, duplicatesList.size)
+    val duplicateGroup = duplicatesList.first()
+    assertEquals(2, duplicateGroup.files.size)
+    assertTrue(duplicateGroup.files.any { it.id == 101L })
+    assertTrue(duplicateGroup.files.any { it.id == 102L })
+    assertFalse(duplicateGroup.files.any { it.id == 103L })
+  }
+
+  @Test
+  fun test_duplicateDetectionEngine_semanticDuplicates() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val scanner = StorageScanner(context)
+    val provider = TFLiteSemanticEmbeddingProvider()
+    val engine = com.example.data.DuplicateDetectionEngine(scanner, provider)
+
+    // Construct mock semantic vectors:
+    // vec1 and vec2 have peak indices around the same positions, vec3 is orthogonal
+    val vec1 = FloatArray(128) { if (it == 5) 0.9f else if (it == 10) 0.3f else if (it == 15) 0.2f else 0.0f }
+    val vec2 = FloatArray(128) { if (it == 5) 0.88f else if (it == 10) 0.35f else if (it == 15) 0.18f else 0.0f }
+    val vec3 = FloatArray(128) { if (it == 80) 1.0f else 0.0f }
+
+    val str1 = provider.floatArrayToString(vec1)
+    val str2 = provider.floatArrayToString(vec2)
+    val str3 = provider.floatArrayToString(vec3)
+
+    val fileList = listOf(
+      com.example.data.FileItemEntity(
+        id = 201L,
+        name = "document_1.pdf",
+        path = "/storage/emulated/0/Documents/document_1.pdf",
+        category = com.example.data.FileCategory.DOCUMENTS.name,
+        sizeBytes = 12000L,
+        semanticIndexed = true,
+        semanticEmbeddingString = str1
+      ),
+      com.example.data.FileItemEntity(
+        id = 202L,
+        name = "document_2_similar.pdf",
+        path = "/storage/emulated/0/Documents/document_2_similar.pdf",
+        category = com.example.data.FileCategory.DOCUMENTS.name,
+        sizeBytes = 12500L,
+        semanticIndexed = true,
+        semanticEmbeddingString = str2
+      ),
+      com.example.data.FileItemEntity(
+        id = 203L,
+        name = "document_different.pdf",
+        path = "/storage/emulated/0/Documents/document_different.pdf",
+        category = com.example.data.FileCategory.DOCUMENTS.name,
+        sizeBytes = 32000L,
+        semanticIndexed = true,
+        semanticEmbeddingString = str3
+      )
+    )
+
+    val activeFilesFlow = kotlinx.coroutines.flow.flowOf(fileList)
+    val similarityThresholdFlow = kotlinx.coroutines.flow.flowOf(85f)
+
+    val duplicatesList = engine.getSemanticDuplicates(activeFilesFlow, similarityThresholdFlow).first()
+
+    assertEquals(1, duplicatesList.size)
+    val duplicateGroup = duplicatesList.first()
+    assertEquals(2, duplicateGroup.files.size)
+    assertTrue(duplicateGroup.files.any { it.id == 201L })
+    assertTrue(duplicateGroup.files.any { it.id == 202L })
+    assertFalse(duplicateGroup.files.any { it.id == 203L })
+  }
+
+  @Test
+  fun test_appDatabase_migrations_config() {
+    // Verify that migrations exist with valid start & end versions
+    val migration1to2 = com.example.data.AppDatabase.MIGRATION_1_2
+    val migration2to3 = com.example.data.AppDatabase.MIGRATION_2_3
+
+    assertEquals(1, migration1to2.startVersion)
+    assertEquals(2, migration1to2.endVersion)
+
+    assertEquals(2, migration2to3.startVersion)
+    assertEquals(3, migration2to3.endVersion)
   }
 }

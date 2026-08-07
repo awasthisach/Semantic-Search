@@ -229,6 +229,9 @@ object PhysicalStorageManager {
             if (!vaultFile.exists()) {
                 return Result.failure(java.io.FileNotFoundException("Vault file not found at $vaultFilePath"))
             }
+            if (vaultFile.length() > 50 * 1024 * 1024L) {
+                return Result.failure(IllegalArgumentException("Vault file size (${vaultFile.length() / (1024 * 1024)}MB) exceeds the maximum secure vault limit of 50MB to prevent OutOfMemoryError."))
+            }
             val encryptedBytes = vaultFile.readBytes()
             val decryptedBytes = decryptAction(encryptedBytes)
 
@@ -277,7 +280,7 @@ object PhysicalStorageManager {
         val srcFile = File(srcPath)
         return try {
             if (srcFile.exists() && srcFile.length() > 50 * 1024 * 1024L) {
-                Log.w(TAG, "Processing large file (${srcFile.length() / (1024 * 1024)}MB): ${srcFile.name}")
+                return Result.failure(IllegalArgumentException("File size (${srcFile.length() / (1024 * 1024)}MB) exceeds the maximum secure vault limit of 50MB to prevent OutOfMemoryError."))
             }
             val fileBytes = if (srcFile.exists() && srcFile.canRead()) {
                 srcFile.readBytes()

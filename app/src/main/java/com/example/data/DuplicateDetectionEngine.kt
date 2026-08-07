@@ -1,6 +1,7 @@
 package com.example.data
 
 import com.example.ai.SemanticEmbeddingProvider
+import com.example.storage.HammingDistanceCalculator
 import com.example.storage.StorageScanner
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -9,7 +10,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 
 class DuplicateDetectionEngine(
-    private val storageScanner: StorageScanner,
+    private val storageScanner: HammingDistanceCalculator,
     private val tfliteProvider: SemanticEmbeddingProvider
 ) {
     fun getVisualDuplicates(

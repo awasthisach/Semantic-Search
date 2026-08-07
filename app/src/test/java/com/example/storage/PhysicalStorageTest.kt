@@ -72,4 +72,38 @@ class PhysicalStorageTest {
         assertTrue(deleted)
         assertFalse(fileToDelete.exists())
     }
+
+    @Test
+    fun testEncryptAndWipeSourceExceedsSizeLimit() {
+        val srcFile = File(testDir, "large_file.bin")
+        // Create a large file quickly using RandomAccessFile to set length
+        java.io.RandomAccessFile(srcFile, "rw").use { raf ->
+            raf.setLength(51 * 1024 * 1024L) // 51MB
+        }
+        assertTrue(srcFile.exists())
+        assertEquals(51 * 1024 * 1024L, srcFile.length())
+
+        val result = PhysicalStorageManager.encryptAndWipeSource(context, srcFile.absolutePath) { bytes ->
+            Pair(bytes, byteArrayOf())
+        }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(result.exceptionOrNull()?.message?.contains("exceeds the maximum secure vault limit of 50MB") == true)
+    }
+
+    @Test
+    fun testDecryptAndRestoreExceedsSizeLimit() {
+        val vaultFile = File(testDir, "large_vault_file.vvf")
+        java.io.RandomAccessFile(vaultFile, "rw").use { raf ->
+            raf.setLength(51 * 1024 * 1024L) // 51MB
+        }
+        assertTrue(vaultFile.exists())
+
+        val result = PhysicalStorageManager.decryptAndRestore(context, vaultFile.absolutePath, File(testDir, "restored.bin").absolutePath) { bytes ->
+            bytes
+        }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(result.exceptionOrNull()?.message?.contains("exceeds the maximum secure vault limit of 50MB") == true)
+    }
 }
