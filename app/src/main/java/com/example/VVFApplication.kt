@@ -3,7 +3,9 @@ package com.example
 
 import android.app.Application
 import android.util.Log
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.data.AppDatabase
@@ -65,9 +67,13 @@ class VVFApplication : Application(), Configuration.Provider {
             val wm = WorkManager.getInstance(this)
 
             // 1. Background File Storage Indexing
+            val indexConstraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
             val indexWork = PeriodicWorkRequestBuilder<BackgroundIndexWorker>(
                 24, TimeUnit.HOURS
-            ).build()
+            ).setConstraints(indexConstraints).build()
             wm.enqueueUniquePeriodicWork(
                 BackgroundIndexWorker.WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
@@ -75,9 +81,13 @@ class VVFApplication : Application(), Configuration.Provider {
             )
 
             // 2. Cache Cleanup
+            val cacheConstraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
             val cacheCleanupWork = PeriodicWorkRequestBuilder<CacheCleanupWorker>(
                 24, TimeUnit.HOURS
-            ).build()
+            ).setConstraints(cacheConstraints).build()
             wm.enqueueUniquePeriodicWork(
                 CacheCleanupWorker.WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
@@ -85,9 +95,13 @@ class VVFApplication : Application(), Configuration.Provider {
             )
 
             // 3. Duplicate Cleanup
+            val duplicateConstraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
             val duplicateCleanupWork = PeriodicWorkRequestBuilder<DuplicateCleanupWorker>(
                 24, TimeUnit.HOURS
-            ).build()
+            ).setConstraints(duplicateConstraints).build()
             wm.enqueueUniquePeriodicWork(
                 DuplicateCleanupWorker.WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
@@ -95,9 +109,13 @@ class VVFApplication : Application(), Configuration.Provider {
             )
 
             // 4. Cloud Synchronization
+            val cloudConstraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .build()
             val cloudSyncWork = PeriodicWorkRequestBuilder<CloudSyncWorker>(
                 12, TimeUnit.HOURS
-            ).build()
+            ).setConstraints(cloudConstraints).build()
             wm.enqueueUniquePeriodicWork(
                 CloudSyncWorker.WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
