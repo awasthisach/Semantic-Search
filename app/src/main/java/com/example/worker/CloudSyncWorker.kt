@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
 import com.example.data.CloudSyncItemEntity
 import com.example.data.CloudApiService
+import com.example.data.FileDao
 import kotlinx.coroutines.flow.first
 import java.io.File
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -16,36 +17,39 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
-class CloudSyncWorker(
+class CloudSyncWorker @JvmOverloads constructor(
     appContext: Context,
-    workerParams: WorkerParameters
+    workerParams: WorkerParameters,
+    private val daoOverride: FileDao? = null,
+    private val apiServiceOverride: CloudApiService? = null
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
         Log.i(TAG, "Starting background CloudSyncWorker with real API contract...")
         return try {
-            val db = AppDatabase.getDatabase(applicationContext)
-            val dao = db.fileDao()
+            val dao = daoOverride ?: AppDatabase.getDatabase(applicationContext).fileDao()
 
             val syncItems = dao.getCloudSyncItems().first()
             val pendingOrQueued = syncItems.filter { it.status == "PENDING" || it.status == "QUEUED" || it.status == "FAILED" || it.status == "UPLOADING" }
 
-            val baseUrl = try {
-                val configUrl = com.example.BuildConfig.API_BASE_URL
-                if (!configUrl.isNullOrEmpty() && configUrl.startsWith("http")) {
-                    if (configUrl.endsWith("/")) configUrl else "$configUrl/"
-                } else {
+            val apiService = apiServiceOverride ?: overrideApiService ?: run {
+                val baseUrl = overrideBaseUrl ?: try {
+                    val configUrl = com.example.BuildConfig.API_BASE_URL
+                    if (!configUrl.isNullOrEmpty() && configUrl.startsWith("http")) {
+                        if (configUrl.endsWith("/")) configUrl else "$configUrl/"
+                    } else {
+                        "https://api.example.com/"
+                    }
+                } catch (e: Throwable) {
                     "https://api.example.com/"
                 }
-            } catch (e: Throwable) {
-                "https://api.example.com/"
-            }
 
-            val retrofit = Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .addConverterFactory(MoshiConverterFactory.create())
-                .build()
-            val apiService = retrofit.create(CloudApiService::class.java)
+                val retrofit = Retrofit.Builder()
+                    .baseUrl(baseUrl)
+                    .addConverterFactory(MoshiConverterFactory.create())
+                    .build()
+                retrofit.create(CloudApiService::class.java)
+            }
 
             var syncedCount = 0
             var failedCount = 0
@@ -104,9 +108,10 @@ class CloudSyncWorker(
             }
 
             Log.i(TAG, "CloudSyncWorker finished. Synced: $syncedCount, Failed: $failedCount")
+            val attemptCount = overrideRunAttemptCount ?: runAttemptCount
             if (failedCount > 0) {
-                if (runAttemptCount >= 3) {
-                    Log.e(TAG, "CloudSyncWorker failed after $runAttemptCount attempts. Abandoning retry.")
+                if (attemptCount >= 3) {
+                    Log.e(TAG, "CloudSyncWorker failed after $attemptCount attempts. Abandoning retry.")
                     Result.failure()
                 } else {
                     Result.retry()
@@ -123,6 +128,15 @@ class CloudSyncWorker(
     companion object {
         const val WORK_NAME = "VVF_CLOUD_SYNC_WORK"
         private const val TAG = "CloudSyncWorker"
+
+        @Volatile
+        var overrideBaseUrl: String? = null
+
+        @Volatile
+        var overrideApiService: CloudApiService? = null
+
+        @Volatile
+        var overrideRunAttemptCount: Int? = null
     }
 }
 

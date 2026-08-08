@@ -130,6 +130,7 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.androidx.room.testing)
   testImplementation("io.mockk:mockk:1.13.11")
+  testImplementation("androidx.work:work-testing:2.9.1")
   testImplementation("androidx.arch.core:core-testing:2.2.0")
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
