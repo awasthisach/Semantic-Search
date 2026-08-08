@@ -3,11 +3,13 @@ package com.example.data
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.squareup.moshi.JsonClass
 
 enum class FileCategory {
     IMAGES, DOCUMENTS, AUDIO, VIDEO, ARCHIVES, APKS, DOWNLOADS, OTHER
 }
 
+@JsonClass(generateAdapter = true)
 @Entity(
     tableName = "files",
     indices = [
@@ -41,6 +43,7 @@ data class FileItemEntity(
     val semanticEmbeddingString: String = "" // comma-separated vector floats
 )
 
+@JsonClass(generateAdapter = true)
 data class DuplicateGroup(
     val title: String,
     val level: Int, // 1 for exact hash, 2 for metadata/visual
@@ -48,6 +51,7 @@ data class DuplicateGroup(
     val files: List<FileItemEntity>
 )
 
+@JsonClass(generateAdapter = true)
 @Entity(tableName = "vault_items")
 data class VaultItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -61,6 +65,7 @@ data class VaultItemEntity(
     val isBiometricProtected: Boolean = true
 )
 
+@JsonClass(generateAdapter = true)
 @Entity(tableName = "cloud_sync")
 data class CloudSyncItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -72,6 +77,7 @@ data class CloudSyncItemEntity(
     val isCore: Boolean = false
 )
 
+@JsonClass(generateAdapter = true)
 @Entity(tableName = "plugins")
 data class PluginEntity(
     @PrimaryKey val pluginId: String,

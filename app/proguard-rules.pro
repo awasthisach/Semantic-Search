@@ -9,9 +9,19 @@
 # Room
 -keep class * extends androidx.room.RoomDatabase
 
-# Moshi (Since it's using Moshi, not Gson)
+# Moshi (KSP Codegen & Runtime)
 -keep class com.squareup.moshi.** { *; }
 -keep interface com.squareup.moshi.** { *; }
+-keep class * implements com.squareup.moshi.JsonAdapter { *; }
+-keep class * extends com.squareup.moshi.JsonAdapter { *; }
+-keep @com.squareup.moshi.JsonClass class * { *; }
+-keepclassmembers class * {
+    @com.squareup.moshi.Json *;
+}
+-keep class *JsonAdapter {
+    public <init>(com.squareup.moshi.Moshi);
+    public <init>(com.squareup.moshi.Moshi, java.lang.reflect.Type[]);
+}
 
 # TensorFlow Lite
 -keep class org.tensorflow.lite.** { *; }
