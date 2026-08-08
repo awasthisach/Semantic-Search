@@ -600,12 +600,13 @@ open class SmartManagerRepository(
         }
     }
 
-    suspend fun addSyncItem(provider: String, fileName: String, size: Long) = withContext(Dispatchers.IO) {
+    suspend fun addSyncItem(provider: String, fileName: String, size: Long, filePath: String = "") = withContext(Dispatchers.IO) {
         withRetry {
             dao.insertCloudSyncItem(
                 CloudSyncItemEntity(
                     provider = provider,
                     fileName = fileName,
+                    filePath = filePath,
                     fileSize = size,
                     status = "QUEUED",
                     lastSyncedMs = System.currentTimeMillis()

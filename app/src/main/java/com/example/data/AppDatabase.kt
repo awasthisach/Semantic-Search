@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CloudSyncItemEntity::class,
         PluginEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
                         `provider` TEXT NOT NULL, 
                         `fileName` TEXT NOT NULL, 
+                        `filePath` TEXT NOT NULL DEFAULT '',
                         `fileSize` INTEGER NOT NULL, 
                         `status` TEXT NOT NULL, 
                         `lastSyncedMs` INTEGER NOT NULL, 
@@ -75,6 +76,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_name` ON `files` (`name`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_tags` ON `files` (`tags`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_ocrText` ON `files` (`ocrText`)")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfNotExists(db, "cloud_sync", "filePath", "TEXT NOT NULL DEFAULT ''")
             }
         }
 
@@ -113,7 +120,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "vvf_smart_manager_db"
                 )
                 .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
                 if (com.example.BuildConfig.DEBUG) {
                     builder.fallbackToDestructiveMigration(true)

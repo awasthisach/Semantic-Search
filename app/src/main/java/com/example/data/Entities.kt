@@ -71,6 +71,7 @@ data class CloudSyncItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val provider: String, // GOOGLE_DRIVE, ONEDRIVE, DROPBOX, NEXTCLOUD, S3, NAS
     val fileName: String,
+    val filePath: String = "",
     val fileSize: Long,
     val status: String, // SYNCED, PENDING, UPLOADING, FAILED
     val lastSyncedMs: Long = System.currentTimeMillis(),

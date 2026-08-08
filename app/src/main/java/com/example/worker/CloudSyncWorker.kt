@@ -8,8 +8,10 @@ import com.example.data.AppDatabase
 import com.example.data.CloudSyncItemEntity
 import com.example.data.CloudApiService
 import kotlinx.coroutines.flow.first
+import java.io.File
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -54,8 +56,14 @@ class CloudSyncWorker(
                 dao.insertCloudSyncItem(uploadingItem)
 
                 try {
+                    val file = File(item.filePath)
+                    if (!file.exists()) {
+                        dao.insertCloudSyncItem(item.copy(status = "FAILED", lastSyncedMs = System.currentTimeMillis()))
+                        failedCount++
+                        continue
+                    }
                     val mediaType = "application/octet-stream".toMediaTypeOrNull()
-                    val requestFile = "dummy content".toRequestBody(mediaType)
+                    val requestFile = file.asRequestBody(mediaType)
                     val multipartBody = MultipartBody.Part.createFormData("file", item.fileName, requestFile)
                     
                     val providerMediaType = "text/plain".toMediaTypeOrNull()
