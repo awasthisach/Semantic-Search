@@ -32,8 +32,8 @@ class CloudSyncWorker @JvmOverloads constructor(
             val syncItems = dao.getCloudSyncItems().first()
             val pendingOrQueued = syncItems.filter { it.status == "PENDING" || it.status == "QUEUED" || it.status == "FAILED" || it.status == "UPLOADING" }
 
-            val apiService = apiServiceOverride ?: overrideApiService ?: run {
-                val baseUrl = overrideBaseUrl ?: try {
+            val apiService = apiServiceOverride ?: run {
+                val baseUrl = try {
                     val configUrl = com.example.BuildConfig.API_BASE_URL
                     if (!configUrl.isNullOrEmpty() && configUrl.startsWith("http")) {
                         if (configUrl.endsWith("/")) configUrl else "$configUrl/"
@@ -108,10 +108,9 @@ class CloudSyncWorker @JvmOverloads constructor(
             }
 
             Log.i(TAG, "CloudSyncWorker finished. Synced: $syncedCount, Failed: $failedCount")
-            val attemptCount = overrideRunAttemptCount ?: runAttemptCount
             if (failedCount > 0) {
-                if (attemptCount >= 3) {
-                    Log.e(TAG, "CloudSyncWorker failed after $attemptCount attempts. Abandoning retry.")
+                if (runAttemptCount >= 3) {
+                    Log.e(TAG, "CloudSyncWorker failed after $runAttemptCount attempts. Abandoning retry.")
                     Result.failure()
                 } else {
                     Result.retry()
@@ -128,15 +127,6 @@ class CloudSyncWorker @JvmOverloads constructor(
     companion object {
         const val WORK_NAME = "VVF_CLOUD_SYNC_WORK"
         private const val TAG = "CloudSyncWorker"
-
-        @Volatile
-        var overrideBaseUrl: String? = null
-
-        @Volatile
-        var overrideApiService: CloudApiService? = null
-
-        @Volatile
-        var overrideRunAttemptCount: Int? = null
     }
 }
 

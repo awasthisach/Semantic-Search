@@ -116,12 +116,10 @@ class CloudSyncWorkerTest {
         context = RuntimeEnvironment.getApplication()
         fakeDao = FakeFileDao()
         fakeApiService = FakeCloudApiService()
-        CloudSyncWorker.overrideRunAttemptCount = null
     }
 
     @After
     fun tearDown() {
-        CloudSyncWorker.overrideRunAttemptCount = null
     }
 
     private fun createWorker(runAttemptCount: Int = 0): CloudSyncWorker {
@@ -223,7 +221,6 @@ class CloudSyncWorkerTest {
         fakeDao.insertCloudSyncItem(syncItem)
 
         fakeApiService.exceptionToThrow = IOException("Network connection dropped")
-        CloudSyncWorker.overrideRunAttemptCount = 3
 
         val worker = createWorker(runAttemptCount = 3)
 
