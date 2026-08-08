@@ -19,7 +19,10 @@ class FileRepository(
 
     suspend fun renameFile(file: FileItemEntity, newName: String): FileItemEntity = withContext(Dispatchers.IO) {
         val renameResult = PhysicalStorageManager.renameFile(context, file.path, newName)
-        val newPath = renameResult.getOrDefault(file.path)
+        if (renameResult.isFailure) {
+            throw renameResult.exceptionOrNull() ?: java.io.IOException("Failed to physically rename file")
+        }
+        val newPath = renameResult.getOrThrow()
         val updatedFile = file.copy(name = newName, path = newPath)
         dao.updateFile(updatedFile)
         updatedFile

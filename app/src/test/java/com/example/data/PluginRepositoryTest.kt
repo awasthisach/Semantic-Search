@@ -46,6 +46,8 @@ class PluginRepositoryTest {
         override fun searchFiles(query: String): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override suspend fun getUnhashedFiles(): List<FileItemEntity> = emptyList()
         override suspend fun updateFiles(files: List<FileItemEntity>) {}
+        override suspend fun findInRecycleBinByHash(hash: String): FileItemEntity? = null
+        override suspend fun moveFilesToRecycleBinAtomic(files: List<FileItemEntity>) {}
         override fun getDuplicateFilesByHash(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override suspend fun insertFile(file: FileItemEntity): Long = 0L
         override suspend fun insertFiles(files: List<FileItemEntity>) {}

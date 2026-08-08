@@ -610,6 +610,7 @@ fun DashboardFileCard(
     }
 }
 fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "अज्ञात साइज़"
     if (bytes < 1024) return "$bytes B"
     val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
     val pre = "KMGTPE"[exp - 1]

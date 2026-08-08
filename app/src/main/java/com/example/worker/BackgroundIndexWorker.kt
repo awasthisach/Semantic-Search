@@ -21,12 +21,17 @@ class BackgroundIndexWorker(
         Log.i(TAG, "Starting background file storage indexing...")
         return try {
             val scanner = StorageScanner(applicationContext)
-            val files = scanner.scanDeviceStorage()
+            val db = AppDatabase.getDatabase(applicationContext)
+            var totalDiscovered = 0
+            scanner.scanDeviceStorageFlow().collect { batch ->
+                if (batch.isNotEmpty()) {
+                    db.fileDao().insertFiles(batch)
+                    totalDiscovered += batch.size
+                }
+            }
 
-            if (files.isNotEmpty()) {
-                val db = AppDatabase.getDatabase(applicationContext)
-                db.fileDao().insertFiles(files)
-                Log.i(TAG, "Successfully indexed and synced ${files.size} real storage files into database.")
+            if (totalDiscovered > 0) {
+                Log.i(TAG, "Successfully indexed and synced $totalDiscovered real storage files into database.")
             } else {
                 Log.w(TAG, "Background scan finished with 0 files discovered.")
             }
@@ -34,7 +39,12 @@ class BackgroundIndexWorker(
             androidx.work.ListenableWorker.Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Background storage indexing failed: ${e.message}", e)
-            androidx.work.ListenableWorker.Result.retry()
+            if (runAttemptCount >= 3) {
+                Log.e(TAG, "Background storage indexing failed after $runAttemptCount attempts. Abandoning retry.")
+                androidx.work.ListenableWorker.Result.failure()
+            } else {
+                androidx.work.ListenableWorker.Result.retry()
+            }
         }
     }
 }

@@ -476,6 +476,7 @@ private fun getCategoryBgColor(category: FileCategory): androidx.compose.ui.grap
 }
 
 private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "अज्ञात साइज़"
     if (bytes < 1024) return "$bytes B"
     val kb = bytes / 1024.0
     if (kb < 1024) return String.format("%.1f KB", kb)

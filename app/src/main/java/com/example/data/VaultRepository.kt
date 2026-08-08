@@ -13,10 +13,7 @@ class VaultRepository(
     private val keystoreVaultManager: KeystoreVaultManager
 ) {
     suspend fun encryptToVault(file: FileItemEntity) = withContext(Dispatchers.IO) {
-        val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path) { bytes ->
-            val encResult = keystoreVaultManager.encryptBytes(bytes)
-            Pair(encResult.ciphertext, encResult.iv)
-        }
+        val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path, keystoreVaultManager)
 
         if (vaultStorageResult.isSuccess) {
             val res = vaultStorageResult.getOrThrow()
@@ -33,19 +30,7 @@ class VaultRepository(
                 )
             )
         } else {
-            val encryptedResult = keystoreVaultManager.encryptBytes(file.name.toByteArray(Charsets.UTF_8))
-            val ivBase64 = Base64.encodeToString(encryptedResult.iv, Base64.NO_WRAP)
-            dao.updateFile(file.copy(isVault = true))
-            dao.insertVaultItem(
-                VaultItemEntity(
-                    originalName = file.name,
-                    encryptedName = "ENC_${System.currentTimeMillis()}_${file.id}.vvf",
-                    encryptedFilePath = file.path,
-                    ivBase64 = ivBase64,
-                    category = file.category,
-                    sizeBytes = file.sizeBytes
-                )
-            )
+            throw vaultStorageResult.exceptionOrNull() ?: java.io.IOException("Failed to encrypt and wipe source file")
         }
     }
 
@@ -57,25 +42,24 @@ class VaultRepository(
                 val decryptResult = PhysicalStorageManager.decryptAndRestore(
                     context,
                     vaultItem.encryptedFilePath,
-                    targetFile.path
-                ) { cipherBytes ->
-                    keystoreVaultManager.decryptBytes(cipherBytes, iv)
-                }
+                    targetFile.path,
+                    iv,
+                    keystoreVaultManager
+                )
                 if (decryptResult.isSuccess) {
                     dao.updateFile(targetFile.copy(isVault = false))
                     dao.deleteVaultItemById(vaultItem.id)
                     true
                 } else {
-                    dao.updateFile(targetFile.copy(isVault = false))
-                    dao.deleteVaultItemById(vaultItem.id)
-                    true
+                    throw decryptResult.exceptionOrNull() ?: java.io.IOException("Failed to physically decrypt vault file")
                 }
             } else {
                 dao.deleteVaultItemById(vaultItem.id)
                 true
             }
         } catch (e: Exception) {
-            false
+            android.util.Log.e("VaultRepository", "Failed to unlock from vault: ${e.message}", e)
+            throw e
         }
     }
 }

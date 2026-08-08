@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PluginEntity::class
     ],
     version = 3,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun fileDao(): FileDao
@@ -71,6 +71,10 @@ abstract class AppDatabase : RoomDatabase() {
                 addColumnIfNotExists(db, "files", "semanticEmbeddingVersion", "INTEGER NOT NULL DEFAULT 0")
                 addColumnIfNotExists(db, "files", "semanticIndexed", "INTEGER NOT NULL DEFAULT 0")
                 addColumnIfNotExists(db, "files", "semanticEmbeddingString", "TEXT NOT NULL DEFAULT ''")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_name` ON `files` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_tags` ON `files` (`tags`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_ocrText` ON `files` (`ocrText`)")
             }
         }
 

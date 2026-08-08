@@ -96,6 +96,7 @@ fun FileManagerScreen(
     var showRecycleBin by rememberSaveable { mutableStateOf(false) }
     var showFilePickerSheet by remember { mutableStateOf(false) }
     var renameTargetFile by remember { mutableStateOf<FileItemEntity?>(null) }
+    var encryptTargetFile by remember { mutableStateOf<FileItemEntity?>(null) }
     var newFileNameText by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val isPageLoading by viewModel.isPageLoading.collectAsState()
@@ -349,7 +350,7 @@ fun FileManagerScreen(
                             renameTargetFile = file
                             newFileNameText = file.name
                         },
-                        onEncrypt = { viewModel.encryptToVault(file) },
+                        onEncrypt = { encryptTargetFile = file },
                         onDelete = { viewModel.moveToRecycleBin(file) },
                         onAddTag = { tag -> viewModel.addTagToFile(file, tag) }
                     )
@@ -402,6 +403,55 @@ fun FileManagerScreen(
             },
             dismissButton = {
                 TextButton(onClick = { renameTargetFile = null }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+    // Encrypt confirmation and Best-Effort Wipe disclaimer dialog
+    if (encryptTargetFile != null) {
+        AlertDialog(
+            onDismissRequest = { encryptTargetFile = null },
+            title = { Text("Encrypt & Best-Effort Wipe") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "This will encrypt \"${encryptTargetFile?.name}\" using AES-256 (Android Keystore) and store it in the secure Vault.\n\n" +
+                               "The original source file will be overwritten with random and zero data (3-pass Best-Effort Wipe) and then deleted.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Disclaimer: Modern flash/SSD storage utilizes Wear-Leveling. Software-level overwriting is performed on a best-effort basis and does not guarantee absolute block-level physical erasure.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(10.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        encryptTargetFile?.let { file ->
+                            viewModel.encryptToVault(file)
+                        }
+                        encryptTargetFile = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange)
+                ) {
+                    Text("Encrypt & Wipe")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { encryptTargetFile = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
             }
         )
     }

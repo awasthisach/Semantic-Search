@@ -9,8 +9,8 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -32,7 +32,7 @@ class VaultRepositoryTest {
         }
 
         override suspend fun insertVaultItem(item: VaultItemEntity): Long {
-            insertedVaultItem = item
+            insertedVaultItem = item.copy(id = 1L)
             return 1L
         }
 
@@ -59,6 +59,8 @@ class VaultRepositoryTest {
         override fun searchFiles(query: String): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override suspend fun getUnhashedFiles(): List<FileItemEntity> = emptyList()
         override suspend fun updateFiles(files: List<FileItemEntity>) {}
+        override suspend fun findInRecycleBinByHash(hash: String): FileItemEntity? = null
+        override suspend fun moveFilesToRecycleBinAtomic(files: List<FileItemEntity>) {}
         override fun getDuplicateFilesByHash(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override suspend fun insertFile(file: FileItemEntity): Long = 0L
         override suspend fun insertFiles(files: List<FileItemEntity>) {}
@@ -74,15 +76,17 @@ class VaultRepositoryTest {
 
     @Before
     fun setUp() {
-        context = Mockito.mock(Context::class.java)
+        context = RuntimeEnvironment.getApplication()
         fakeDao = FakeFileDao()
         keystoreVaultManager = KeystoreVaultManager()
         repository = VaultRepository(context, fakeDao, keystoreVaultManager)
     }
 
     @Test
-    fun testEncryptToVaultFallbackFlow() = runBlocking {
-        val file = FileItemEntity(id = 5, name = "secret.png", path = "/secret.png", category = "IMAGES", sizeBytes = 1200)
+    fun testEncryptToVaultSuccess(): Unit = runBlocking {
+        val tempFile = java.io.File(context.filesDir, "secret.png")
+        tempFile.writeText("sensitive secure data to encrypt")
+        val file = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = tempFile.length())
 
         repository.encryptToVault(file)
 
@@ -90,26 +94,38 @@ class VaultRepositoryTest {
         assertTrue(fakeDao.updatedFile!!.isVault)
         assertNotNull(fakeDao.insertedVaultItem)
         assertEquals("secret.png", fakeDao.insertedVaultItem!!.originalName)
+        
+        // Original file should be securely wiped and deleted
+        assertFalse(tempFile.exists())
     }
 
     @Test
-    fun testUnlockFromVaultDelegation() = runBlocking {
-        val vaultItem = VaultItemEntity(
-            id = 12,
-            originalName = "secret.png",
-            encryptedName = "ENC_123.vvf",
-            encryptedFilePath = "/vault/ENC_123.vvf",
-            ivBase64 = "YWJjZA==", // "abcd"
-            category = "IMAGES",
-            sizeBytes = 1200
-        )
-        val file = FileItemEntity(id = 5, name = "secret.png", path = "/secret.png", category = "IMAGES", sizeBytes = 1200, isVault = true)
-
-        val success = repository.unlockFromVault(vaultItem, file)
+    fun testUnlockFromVaultDelegation(): Unit = runBlocking {
+        val tempFile = java.io.File(context.filesDir, "secret.png")
+        if (tempFile.exists()) tempFile.delete()
+        
+        // Encrypt first to have a valid encrypted file in vault
+        val originalFile = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = 1200)
+        tempFile.writeText("sensitive data to encrypt")
+        
+        repository.encryptToVault(originalFile)
+        
+        val vaultItem = fakeDao.insertedVaultItem
+        assertNotNull(vaultItem)
+        
+        val success = repository.unlockFromVault(vaultItem!!, originalFile)
         assertTrue(success)
 
         assertNotNull(fakeDao.updatedFile)
         assertFalse(fakeDao.updatedFile!!.isVault)
-        assertEquals(12L, fakeDao.deletedVaultItemId)
+        assertEquals(1L, fakeDao.deletedVaultItemId)
+        
+        // Restored file should exist now
+        assertTrue(tempFile.exists())
+        assertEquals("sensitive data to encrypt", tempFile.readText())
+        
+        // Clean up
+        tempFile.delete()
+        Unit
     }
 }

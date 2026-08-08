@@ -83,6 +83,8 @@ object PhysicalStorageManager {
                         Log.w(TAG, "SAF DocumentFile rename failed: ${e.message}")
                     }
                 }
+            } else {
+                return Result.failure(java.io.FileNotFoundException("Source file not found at $oldPath"))
             }
 
             // Also attempt MediaStore update for system index
@@ -93,8 +95,7 @@ object PhysicalStorageManager {
                 notifyMediaStoreFileChanged(context, oldPath, finalPath)
                 Result.success(finalPath)
             } else {
-                // Return new path even if virtual file to update database state cleanly
-                Result.success(newFile.absolutePath)
+                Result.failure(java.io.IOException("Failed to physically rename file $oldPath to $newName"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error renaming file physically: ${e.message}", e)
@@ -167,13 +168,15 @@ object PhysicalStorageManager {
                 }
             }
         } else {
-            // Virtual/Sample file fallback
-            moved = true
+            return Result.failure(java.io.FileNotFoundException("Source file not found at $path"))
         }
 
-        val finalTrashPath = if (trashFile.exists()) trashFile.absolutePath else trashFile.absolutePath
-        notifyMediaStoreFileDeleted(context, path)
-        return Result.success(finalTrashPath)
+        if (moved && trashFile.exists()) {
+            notifyMediaStoreFileDeleted(context, path)
+            return Result.success(trashFile.absolutePath)
+        } else {
+            return Result.failure(java.io.IOException("Failed to move file to trash: $path"))
+        }
     }
 
     /**
@@ -206,13 +209,15 @@ object PhysicalStorageManager {
                 }
             }
         } else {
-            // Virtual fallback
-            restored = true
+            return Result.failure(java.io.FileNotFoundException("Trash file not found at $trashPath"))
         }
 
-        val finalPath = if (targetFile.exists()) targetFile.absolutePath else originalPath
-        notifyMediaStoreFileChanged(context, "", finalPath)
-        return Result.success(finalPath)
+        if (restored && targetFile.exists()) {
+            notifyMediaStoreFileChanged(context, "", targetFile.absolutePath)
+            return Result.success(targetFile.absolutePath)
+        } else {
+            return Result.failure(java.io.IOException("Failed to restore file from trash: $trashPath"))
+        }
     }
 
     /**
@@ -270,6 +275,61 @@ object PhysicalStorageManager {
     }
 
     /**
+     * Stream-based AES-GCM Decryption from Secure Vault restoring to original path
+     */
+    fun decryptAndRestore(
+        context: Context,
+        vaultFilePath: String,
+        originalPath: String,
+        iv: ByteArray,
+        keystoreVaultManager: com.example.security.KeystoreVaultManager
+    ): Result<String> {
+        return try {
+            val vaultFile = File(vaultFilePath)
+            if (!vaultFile.exists()) {
+                return Result.failure(java.io.FileNotFoundException("Vault file not found at $vaultFilePath"))
+            }
+
+            val targetFile = File(originalPath)
+            targetFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+
+            val cipher = keystoreVaultManager.getDecryptionCipher(iv)
+
+            java.io.FileInputStream(vaultFile).use { fis ->
+                val cipherInputStream = javax.crypto.CipherInputStream(fis, cipher)
+                FileOutputStream(targetFile).use { fos ->
+                    val buffer = ByteArray(65536)
+                    var bytesRead: Int
+                    while (cipherInputStream.read(buffer).also { bytesRead = it } != -1) {
+                        fos.write(buffer, 0, bytesRead)
+                    }
+                }
+                cipherInputStream.close()
+            }
+
+            // Delete the encrypted file from vault
+            val deletedVault = vaultFile.delete()
+            if (!deletedVault && vaultFile.exists()) {
+                try { if (targetFile.exists()) targetFile.delete() } catch (_: Exception) {}
+                return Result.failure(IllegalStateException("Failed to delete encrypted vault source file."))
+            }
+
+            notifyMediaStoreFileChanged(context, "", targetFile.absolutePath)
+            Result.success(targetFile.absolutePath)
+        } catch (e: OutOfMemoryError) {
+            Log.e(TAG, "OutOfMemoryError in decryptAndRestore Stream: ${e.message}")
+            System.gc()
+            Result.failure(e)
+        } catch (e: java.io.IOException) {
+            Log.e(TAG, "IOException in decryptAndRestore Stream: ${e.message}")
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decrypt and restore Stream: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Physically encrypt file into Secure Vault and physically DELETE/WIPE source file
      */
     fun encryptAndWipeSource(
@@ -304,16 +364,7 @@ object PhysicalStorageManager {
 
             // Secure physical wipe of original source file if it exists
             if (srcFile.exists()) {
-                val deleted = deleteFile(context, srcPath)
-                if (!deleted && srcFile.exists()) {
-                    try {
-                        val wipeSize = srcFile.length().coerceAtMost(1024L * 1024L).toInt()
-                        FileOutputStream(srcFile).use { fos ->
-                            fos.write(ByteArray(wipeSize))
-                        }
-                        srcFile.delete()
-                    } catch (_: Exception) {}
-                }
+                secureWipeFile(context, srcFile)
             }
 
             Result.success(
@@ -333,6 +384,112 @@ object PhysicalStorageManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to encrypt and wipe source: ${e.message}", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Stream-based AES-GCM Encryption into Secure Vault and physical deletion/wipe of source file
+     */
+    fun encryptAndWipeSource(
+        context: Context,
+        srcPath: String,
+        keystoreVaultManager: com.example.security.KeystoreVaultManager
+    ): Result<VaultStorageResult> {
+        val srcFile = File(srcPath)
+        return try {
+            val vaultDir = getVaultDir(context)
+            val encFileName = "ENC_${System.currentTimeMillis()}_${srcFile.name}.vvf"
+            val vaultFile = File(vaultDir, encFileName)
+
+            val cipher = keystoreVaultManager.getEncryptionCipher()
+            val iv = cipher.iv
+
+            if (srcFile.exists() && srcFile.canRead()) {
+                java.io.FileInputStream(srcFile).use { fis ->
+                    FileOutputStream(vaultFile).use { fos ->
+                        val cipherOutputStream = javax.crypto.CipherOutputStream(fos, cipher)
+                        val buffer = ByteArray(65536)
+                        var bytesRead: Int
+                        while (fis.read(buffer).also { bytesRead = it } != -1) {
+                            cipherOutputStream.write(buffer, 0, bytesRead)
+                        }
+                        cipherOutputStream.close()
+                    }
+                }
+            } else {
+                val fileBytes = srcPath.toByteArray(Charsets.UTF_8)
+                FileOutputStream(vaultFile).use { fos ->
+                    val cipherOutputStream = javax.crypto.CipherOutputStream(fos, cipher)
+                    cipherOutputStream.write(fileBytes)
+                    cipherOutputStream.close()
+                }
+            }
+
+            // Secure physical wipe of original source file if it exists
+            if (srcFile.exists()) {
+                secureWipeFile(context, srcFile)
+            }
+
+            Result.success(
+                VaultStorageResult(
+                    vaultFilePath = vaultFile.absolutePath,
+                    encryptedFileName = encFileName,
+                    iv = iv
+                )
+            )
+        } catch (e: OutOfMemoryError) {
+            Log.e(TAG, "OutOfMemoryError in encryptAndWipeSource Stream: ${e.message}")
+            System.gc()
+            Result.failure(e)
+        } catch (e: java.io.IOException) {
+            Log.e(TAG, "IOException in encryptAndWipeSource Stream: ${e.message}")
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to encrypt and wipe source Stream: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    private fun secureWipeFile(context: Context, file: File) {
+        if (!file.exists() || !file.canWrite()) return
+        try {
+            val length = file.length()
+            if (length > 0) {
+                val secureRandom = java.security.SecureRandom()
+                val bufferSize = 65536
+                val buffer = ByteArray(bufferSize)
+
+                // 3 Passes to ensure thorough erasure matching the actual file size
+                // Pass 1: Secure Random
+                // Pass 2: Zeros (0x00)
+                // Pass 3: Secure Random
+                val passes = listOf("random", "zeros", "random")
+
+                for (pass in passes) {
+                    java.io.RandomAccessFile(file, "rws").use { raf ->
+                        raf.seek(0)
+                        var remaining = length
+                        while (remaining > 0) {
+                            val toWrite = remaining.coerceAtMost(bufferSize.toLong()).toInt()
+                            when (pass) {
+                                "zeros" -> buffer.fill(0)
+                                "random" -> secureRandom.nextBytes(buffer)
+                            }
+                            raf.write(buffer, 0, toWrite)
+                            remaining -= toWrite
+                        }
+                        try {
+                            raf.fd.sync()
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to securely overwrite file contents: ${e.message}", e)
+        } finally {
+            try {
+                deleteFile(context, file.absolutePath)
+            } catch (_: Exception) {}
         }
     }
 

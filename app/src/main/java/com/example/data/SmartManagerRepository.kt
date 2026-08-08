@@ -410,22 +410,37 @@ open class SmartManagerRepository(
      */
     suspend fun rescanPhysicalStorage(): Int = withContext(Dispatchers.IO) {
         withRetry {
-            val discoveredFiles = storageScanner.scanDeviceStorage(computeHashes = false)
-            if (discoveredFiles.isNotEmpty()) {
-                dao.insertFiles(discoveredFiles)
+            var totalCount = 0
+            storageScanner.scanDeviceStorageFlow(computeHashes = false).collect { batch ->
+                if (batch.isNotEmpty()) {
+                    dao.insertFiles(batch)
+                    totalCount += batch.size
+                }
             }
             startIncrementalDuplicateScan()
-            discoveredFiles.size
+            totalCount
         }
     }
 
+    suspend fun cleanSelectedDuplicates(selectedIds: Set<Long>) = withContext(Dispatchers.IO) {
+        val duplicateManager = DuplicateManager(dao, context)
+        duplicateManager.cleanSelectedDuplicates(selectedIds)
+    }
+
     suspend fun moveToRecycleBin(file: FileItemEntity) = withContext(Dispatchers.IO) {
+        val currentFile = dao.getFileById(file.id)
+        if (currentFile == null || currentFile.isRecycleBin) {
+            return@withContext
+        }
         withRetry {
-            val trashResult = PhysicalStorageManager.moveToTrash(context, file.path)
-            val newPath = trashResult.getOrDefault(file.path)
-            val originalPathToKeep = if (file.originalPath.isNotBlank()) file.originalPath else file.path
+            val trashResult = PhysicalStorageManager.moveToTrash(context, currentFile.path)
+            if (trashResult.isFailure) {
+                throw trashResult.exceptionOrNull() ?: java.io.IOException("Failed to move file to trash")
+            }
+            val newPath = trashResult.getOrThrow()
+            val originalPathToKeep = if (currentFile.originalPath.isNotBlank()) currentFile.originalPath else currentFile.path
             dao.updateFile(
-                file.copy(
+                currentFile.copy(
                     path = newPath,
                     originalPath = originalPathToKeep,
                     isRecycleBin = true,
@@ -436,12 +451,19 @@ open class SmartManagerRepository(
     }
 
     suspend fun restoreFromRecycleBin(file: FileItemEntity) = withContext(Dispatchers.IO) {
+        val currentFile = dao.getFileById(file.id)
+        if (currentFile == null || !currentFile.isRecycleBin) {
+            return@withContext
+        }
         withRetry {
-            val targetPath = if (file.originalPath.isNotBlank()) file.originalPath else file.path
-            val restoreResult = PhysicalStorageManager.restoreFromTrash(context, file.path, targetPath)
-            val restoredPath = restoreResult.getOrDefault(targetPath)
+            val targetPath = if (currentFile.originalPath.isNotBlank()) currentFile.originalPath else currentFile.path
+            val restoreResult = PhysicalStorageManager.restoreFromTrash(context, currentFile.path, targetPath)
+            if (restoreResult.isFailure) {
+                throw restoreResult.exceptionOrNull() ?: java.io.IOException("Failed to restore file from trash")
+            }
+            val restoredPath = restoreResult.getOrThrow()
             dao.updateFile(
-                file.copy(
+                currentFile.copy(
                     path = restoredPath,
                     originalPath = "",
                     isRecycleBin = false,
@@ -452,17 +474,31 @@ open class SmartManagerRepository(
     }
 
     suspend fun deletePermanently(file: FileItemEntity) = withContext(Dispatchers.IO) {
+        val currentFile = dao.getFileById(file.id)
+        if (currentFile == null) {
+            return@withContext
+        }
         withRetry {
-            PhysicalStorageManager.deleteFile(context, file.path)
-            dao.deleteFileById(file.id)
+            val deleted = PhysicalStorageManager.deleteFile(context, currentFile.path)
+            if (!deleted) {
+                throw java.io.IOException("Failed to physically delete file at ${currentFile.path}")
+            }
+            dao.deleteFileById(currentFile.id)
         }
     }
 
     suspend fun emptyRecycleBin() = withContext(Dispatchers.IO) {
         withRetry {
             val trashFiles = dao.getRecycleBinFiles().first()
+            var failedCount = 0
             trashFiles.forEach { file ->
-                PhysicalStorageManager.deleteFile(context, file.path)
+                val deleted = PhysicalStorageManager.deleteFile(context, file.path)
+                if (!deleted) {
+                    failedCount++
+                }
+            }
+            if (failedCount > 0) {
+                throw java.io.IOException("Failed to physically delete $failedCount trash files")
             }
             dao.emptyRecycleBin()
         }
@@ -472,10 +508,7 @@ open class SmartManagerRepository(
      * Real Keystore AES-256-GCM Encryption for Secure Vault + Physical Source Wipe
      */
     suspend fun encryptToVault(file: FileItemEntity) = withContext(Dispatchers.IO) {
-        val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path) { bytes ->
-            val encResult = keystoreVaultManager.encryptBytes(bytes)
-            Pair(encResult.ciphertext, encResult.iv)
-        }
+        val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path, keystoreVaultManager)
 
         if (vaultStorageResult.isSuccess) {
             val res = vaultStorageResult.getOrThrow()
@@ -492,19 +525,7 @@ open class SmartManagerRepository(
                 )
             )
         } else {
-            val encryptedResult = keystoreVaultManager.encryptBytes(file.name.toByteArray(Charsets.UTF_8))
-            val ivBase64 = Base64.encodeToString(encryptedResult.iv, Base64.NO_WRAP)
-            dao.updateFile(file.copy(isVault = true))
-            dao.insertVaultItem(
-                VaultItemEntity(
-                    originalName = file.name,
-                    encryptedName = "ENC_${System.currentTimeMillis()}_${file.id}.vvf",
-                    encryptedFilePath = file.path,
-                    ivBase64 = ivBase64,
-                    category = file.category,
-                    sizeBytes = file.sizeBytes
-                )
-            )
+            throw vaultStorageResult.exceptionOrNull() ?: java.io.IOException("Failed to encrypt and wipe source file")
         }
     }
 
@@ -519,19 +540,16 @@ open class SmartManagerRepository(
                 val decryptResult = PhysicalStorageManager.decryptAndRestore(
                     context,
                     vaultItem.encryptedFilePath,
-                    targetFile.path
-                ) { cipherBytes ->
-                    keystoreVaultManager.decryptBytes(cipherBytes, iv)
-                }
+                    targetFile.path,
+                    iv,
+                    keystoreVaultManager
+                )
                 if (decryptResult.isSuccess) {
                     dao.updateFile(targetFile.copy(isVault = false))
                     dao.deleteVaultItemById(vaultItem.id)
                     true
                 } else {
-                    // Fallback for virtual / sample files or failed files
-                    dao.updateFile(targetFile.copy(isVault = false))
-                    dao.deleteVaultItemById(vaultItem.id)
-                    true
+                    throw decryptResult.exceptionOrNull() ?: java.io.IOException("Failed to physically decrypt vault file")
                 }
             } else {
                 dao.deleteVaultItemById(vaultItem.id)
@@ -539,7 +557,7 @@ open class SmartManagerRepository(
             }
         } catch (e: Exception) {
             android.util.Log.e("SmartManagerRepository", "Failed to unlock from vault: ${e.message}", e)
-            false
+            throw e
         }
     }
 
@@ -609,9 +627,24 @@ open class SmartManagerRepository(
 
     fun enqueueDuplicateCleanupWork() {
         try {
-            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.DuplicateCleanupWorker>().build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
-            Log.i("SmartManagerRepository", "One-time DuplicateCleanupWorker enqueued.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.DuplicateCleanupWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    10,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "DuplicateCleanupWork",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            Log.i("SmartManagerRepository", "One-time DuplicateCleanupWorker enqueued uniquely.")
         } catch (e: Exception) {
             Log.e("SmartManagerRepository", "Failed to enqueue DuplicateCleanupWorker: ${e.message}")
         }
@@ -619,9 +652,24 @@ open class SmartManagerRepository(
 
     fun enqueueCloudSyncWork() {
         try {
-            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CloudSyncWorker>().build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
-            Log.i("SmartManagerRepository", "One-time CloudSyncWorker enqueued.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CloudSyncWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    10,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "CloudSyncWork",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            Log.i("SmartManagerRepository", "One-time CloudSyncWorker enqueued uniquely.")
         } catch (e: Exception) {
             Log.e("SmartManagerRepository", "Failed to enqueue CloudSyncWorker: ${e.message}")
         }
@@ -629,9 +677,24 @@ open class SmartManagerRepository(
 
     fun enqueueCacheCleanupWork() {
         try {
-            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CacheCleanupWorker>().build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
-            Log.i("SmartManagerRepository", "One-time CacheCleanupWorker enqueued.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CacheCleanupWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    10,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "CacheCleanupWork",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            Log.i("SmartManagerRepository", "One-time CacheCleanupWorker enqueued uniquely.")
         } catch (e: Exception) {
             Log.e("SmartManagerRepository", "Failed to enqueue CacheCleanupWorker: ${e.message}")
         }
@@ -639,9 +702,24 @@ open class SmartManagerRepository(
 
     fun enqueueBackgroundIndexWork() {
         try {
-            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.BackgroundIndexWorker>().build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
-            Log.i("SmartManagerRepository", "One-time BackgroundIndexWorker enqueued.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .setRequiresStorageNotLow(true)
+                .build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.BackgroundIndexWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    10,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "BackgroundIndexWork",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            Log.i("SmartManagerRepository", "One-time BackgroundIndexWorker enqueued uniquely.")
         } catch (e: Exception) {
             Log.e("SmartManagerRepository", "Failed to enqueue BackgroundIndexWorker: ${e.message}")
         }

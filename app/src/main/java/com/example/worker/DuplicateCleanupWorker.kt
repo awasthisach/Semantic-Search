@@ -1,7 +1,11 @@
 package com.example.worker
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
@@ -17,6 +21,13 @@ class DuplicateCleanupWorker(
     override suspend fun doWork(): Result {
         Log.i(TAG, "Starting background DuplicateCleanupWorker...")
         return try {
+            val prefs = applicationContext.getSharedPreferences("vvf_app_settings", Context.MODE_PRIVATE)
+            val isAutoCleanEnabled = prefs.getBoolean("auto_clean_duplicates_bg", false)
+            if (!isAutoCleanEnabled) {
+                Log.i(TAG, "Auto-clean duplicates in background is disabled in settings. Skipping cleanup execution.")
+                return Result.success()
+            }
+
             val db = AppDatabase.getDatabase(applicationContext)
             val dao = db.fileDao()
 
@@ -54,6 +65,7 @@ class DuplicateCleanupWorker(
                     TAG,
                     "DuplicateCleanupWorker moved $duplicatesFound duplicate files (${bytesCleaned / 1024} KB) to Recycle Bin."
                 )
+                sendNotification(applicationContext, duplicatesFound, bytesCleaned)
             } else {
                 Log.i(TAG, "DuplicateCleanupWorker completed. No exact duplicate clutter found.")
             }
@@ -61,7 +73,42 @@ class DuplicateCleanupWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error in DuplicateCleanupWorker: ${e.message}", e)
-            Result.failure()
+            if (runAttemptCount >= 3) {
+                Log.e(TAG, "DuplicateCleanupWorker failed after $runAttemptCount attempts. Abandoning retry.")
+                Result.failure()
+            } else {
+                Result.retry()
+            }
+        }
+    }
+
+    private fun sendNotification(context: Context, filesCount: Int, bytesSaved: Long) {
+        try {
+            val channelId = "vvf_duplicate_cleanup_channel"
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "Duplicate Cleanup Notifications",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Notifies when background auto-clean moves duplicate files to Recycle Bin"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val formattedSize = if (bytesSaved > 1024 * 1024) "${bytesSaved / (1024 * 1024)} MB" else "${bytesSaved / 1024} KB"
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentTitle("Auto Duplicate Cleanup")
+                .setContentText("$filesCount duplicate files ($formattedSize) moved to Recycle Bin")
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(1002, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to post notification: ${e.message}")
         }
     }
 

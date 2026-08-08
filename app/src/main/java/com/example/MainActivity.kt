@@ -24,8 +24,6 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val cacheCleanupRequest = PeriodicWorkRequestBuilder<CacheCleanupWorker>(1, TimeUnit.DAYS).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(CacheCleanupWorker.WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, cacheCleanupRequest)
 
         setContent {
             VVFSmartManagerTheme {

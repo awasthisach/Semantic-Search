@@ -34,6 +34,12 @@ class OcrEngineTest {
             onUpdateCallback?.invoke()
         }
 
+        override suspend fun findInRecycleBinByHash(hash: String): FileItemEntity? = null
+
+        override suspend fun moveFilesToRecycleBinAtomic(files: List<FileItemEntity>) {
+            updateFiles(files)
+        }
+
         override suspend fun getFileById(id: Long): FileItemEntity? = null
         override suspend fun getFileByName(name: String): FileItemEntity? = null
         override fun getOcrScannedFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())

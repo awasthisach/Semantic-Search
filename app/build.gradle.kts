@@ -4,6 +4,7 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+  alias(libs.plugins.detekt)
 }
 
 android {
@@ -58,7 +59,8 @@ android {
     }
   }
   lint {
-    checkReleaseBuilds = false
+    checkReleaseBuilds = true
+    abortOnError = true
     lintConfig = file("lint.xml")
   }
   compileOptions {
@@ -86,6 +88,10 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+}
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -139,4 +145,10 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
+}
+
+detekt {
+  buildUponDefaultConfig = true
+  allRules = false
+  ignoreFailures = true
 }

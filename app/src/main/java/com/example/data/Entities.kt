@@ -15,7 +15,10 @@ enum class FileCategory {
         Index(value = ["category"]),
         Index(value = ["md5Hash"]),
         Index(value = ["isVault"]),
-        Index(value = ["isRecycleBin"])
+        Index(value = ["isRecycleBin"]),
+        Index(value = ["name"]),
+        Index(value = ["tags"]),
+        Index(value = ["ocrText"])
     ]
 )
 data class FileItemEntity(

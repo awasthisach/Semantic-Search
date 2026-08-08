@@ -59,6 +59,14 @@ interface FileDao {
     @Update
     suspend fun updateFiles(files: List<FileItemEntity>)
 
+    @Query("SELECT * FROM files WHERE md5Hash = :hash AND isRecycleBin = 1 LIMIT 1")
+    suspend fun findInRecycleBinByHash(hash: String): FileItemEntity?
+
+    @androidx.room.Transaction
+    suspend fun moveFilesToRecycleBinAtomic(files: List<FileItemEntity>) {
+        updateFiles(files)
+    }
+
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND md5Hash IS NOT NULL AND md5Hash != '' AND md5Hash IN (SELECT md5Hash FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND md5Hash IS NOT NULL AND md5Hash != '' GROUP BY md5Hash HAVING COUNT(*) > 1) ORDER BY md5Hash ASC, dateModifiedMs DESC")
     fun getDuplicateFilesByHash(): Flow<List<FileItemEntity>>
 

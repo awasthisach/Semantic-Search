@@ -17,6 +17,10 @@ import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 
 class StorageScanner(private val context: Context) : HammingDistanceCalculator {
 
@@ -24,42 +28,97 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
         private const val TAG = "StorageScanner"
     }
 
-    suspend fun scanDeviceStorage(computeHashes: Boolean = false): List<FileItemEntity> = withContext(Dispatchers.IO) {
-        val discoveredFiles = mutableMapOf<String, FileItemEntity>()
-        try {
-            val externalDir = Environment.getExternalStorageDirectory()
-            if (externalDir != null && externalDir.exists() && externalDir.canRead()) {
-                scanDirectoryRecursively(externalDir, discoveredFiles, depth = 0, maxDepth = 6, computeHashes = computeHashes)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error scanning external directory: ${e.message}", e)
+    fun scanDeviceStorageFlow(computeHashes: Boolean = false): Flow<List<FileItemEntity>> = flow {
+        scanDeviceStorage(computeHashes) { batch ->
+            emit(batch)
         }
+    }.flowOn(Dispatchers.IO)
+
+    suspend fun scanDeviceStorage(computeHashes: Boolean = false): List<FileItemEntity> {
+        val discovered = mutableListOf<FileItemEntity>()
+        scanDeviceStorage(computeHashes) { batch ->
+            discovered.addAll(batch)
+        }
+        return discovered
+    }
+
+    suspend fun scanDeviceStorage(
+        computeHashes: Boolean = false,
+        onBatchDiscovered: suspend (List<FileItemEntity>) -> Unit
+    ): Int = withContext(Dispatchers.IO) {
+        val processedPaths = mutableSetOf<String>()
+        val currentBatch = mutableListOf<FileItemEntity>()
+        var totalDiscovered = 0
+
+        val emitItem: suspend (FileItemEntity) -> Unit = { item ->
+            currentCoroutineContext().ensureActive()
+            currentBatch.add(item)
+            if (currentBatch.size >= 100) {
+                onBatchDiscovered(currentBatch.toList())
+                totalDiscovered += currentBatch.size
+                currentBatch.clear()
+            }
+        }
+
+        // Primary Source: MediaStore Scan (Scoped Storage compatible)
         try {
-            scanMediaStore(discoveredFiles, computeHashes = computeHashes)
+            scanMediaStore(processedPaths, computeHashes = computeHashes, onItemDiscovered = emitItem)
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning MediaStore: ${e.message}", e)
         }
-        Log.i(TAG, "Storage scan completed. Total real files discovered: ${discoveredFiles.size}")
-        discoveredFiles.values.toList()
+
+        // Supplementary Source: Raw Directory Traversal (Only if All Files Access / External storage manager or read permissions are granted)
+        val hasAllFilesAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            try {
+                Environment.getExternalStorageDirectory()?.canRead() == true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        if (hasAllFilesAccess) {
+            try {
+                val externalDir = Environment.getExternalStorageDirectory()
+                if (externalDir != null && externalDir.exists() && externalDir.canRead()) {
+                    scanDirectoryRecursively(externalDir, processedPaths, depth = 0, maxDepth = 6, computeHashes = computeHashes, onItemDiscovered = emitItem)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scanning external directory: ${e.message}", e)
+            }
+        }
+
+        if (currentBatch.isNotEmpty()) {
+            totalDiscovered += currentBatch.size
+            onBatchDiscovered(currentBatch.toList())
+            currentBatch.clear()
+        }
+
+        Log.i(TAG, "Storage scan completed. Total real files discovered: $totalDiscovered")
+        totalDiscovered
     }
 
     private suspend fun scanDirectoryRecursively(
         dir: File,
-        outMap: MutableMap<String, FileItemEntity>,
+        processedPaths: MutableSet<String>,
         depth: Int,
         maxDepth: Int,
-        computeHashes: Boolean
+        computeHashes: Boolean,
+        onItemDiscovered: suspend (FileItemEntity) -> Unit
     ) {
+        currentCoroutineContext().ensureActive()
         if (depth > maxDepth) return
         val files = dir.listFiles() ?: return
         for (file in files) {
+            currentCoroutineContext().ensureActive()
             if (file.name.startsWith(".")) continue
             if (file.isDirectory) {
                 if (file.name.equals("Android", ignoreCase = true) && depth == 0) continue
-                scanDirectoryRecursively(file, outMap, depth + 1, maxDepth, computeHashes)
+                scanDirectoryRecursively(file, processedPaths, depth + 1, maxDepth, computeHashes, onItemDiscovered)
             } else if (file.isFile && file.length() > 0) {
                 val absolutePath = file.absolutePath
-                if (!outMap.containsKey(absolutePath)) {
+                if (processedPaths.add(absolutePath)) {
                     val category = determineCategory(file.name)
                     val hash = if (computeHashes) computeFileHashQuietly(file) else ""
                     val visualHash = if (computeHashes && category == FileCategory.IMAGES) computeDHashQuietly(file) else ""
@@ -72,13 +131,17 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
                         md5Hash = hash,
                         visualSimilarityHash = visualHash
                     )
-                    outMap[absolutePath] = fileItem
+                    onItemDiscovered(fileItem)
                 }
             }
         }
     }
 
-    private suspend fun scanMediaStore(outMap: MutableMap<String, FileItemEntity>, computeHashes: Boolean) {
+    private suspend fun scanMediaStore(
+        processedPaths: MutableSet<String>,
+        computeHashes: Boolean,
+        onItemDiscovered: suspend (FileItemEntity) -> Unit
+    ) {
         val projection = arrayOf(
             MediaStore.Files.FileColumns._ID,
             MediaStore.Files.FileColumns.DISPLAY_NAME,
@@ -105,13 +168,14 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
             val dateColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
 
             while (cursor.moveToNext()) {
+                currentCoroutineContext().ensureActive()
                 val path = if (dataColumn != -1) cursor.getString(dataColumn) else null
                 val name = if (nameColumn != -1) cursor.getString(nameColumn) else null
                 val size = if (sizeColumn != -1) cursor.getLong(sizeColumn) else 0L
                 val dateSec = if (dateColumn != -1) cursor.getLong(dateColumn) else 0L
 
                 if (!path.isNullOrBlank() && !name.isNullOrBlank() && size > 0) {
-                    if (!outMap.containsKey(path)) {
+                    if (processedPaths.add(path)) {
                         val category = determineCategory(name)
                         val file = File(path)
                         val hash = if (computeHashes && file.exists() && file.canRead()) computeFileHashQuietly(file) else ""
@@ -126,7 +190,7 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
                             md5Hash = hash,
                             visualSimilarityHash = visualHash
                         )
-                        outMap[path] = item
+                        onItemDiscovered(item)
                     }
                 }
             }

@@ -43,6 +43,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -110,7 +112,7 @@ fun AiDuplicatesScreen(
         }
     }
 }
-@Composable
+private @Composable
 fun SectionChip(
     title: String,
     index: Int,
@@ -148,7 +150,45 @@ fun DuplicateCleanerSection(
     val semanticDuplicates by viewModel.semanticDuplicates.collectAsStateWithLifecycle()
     val documentDuplicates by viewModel.documentDuplicates.collectAsStateWithLifecycle()
     val documentStats by viewModel.documentStats.collectAsStateWithLifecycle()
+    val autoCleanDuplicatesBg by viewModel.autoCleanDuplicatesBg.collectAsStateWithLifecycle()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Auto-clean duplicates in background setting card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-clean duplicates in background",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Automatically move exact duplicate files to Recycle Bin and send notifications",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = autoCleanDuplicatesBg,
+                        onCheckedChange = { viewModel.setAutoCleanDuplicatesBg(it) },
+                        modifier = Modifier.testTag("auto_clean_duplicates_switch"),
+                        colors = SwitchDefaults.colors(checkedThumbColor = BhagwaOrange, checkedTrackColor = BhagwaOrange.copy(alpha = 0.3f))
+                    )
+                }
+            }
+        }
         // Scanning Progress & Background Batch Control Card
         item {
             Card(

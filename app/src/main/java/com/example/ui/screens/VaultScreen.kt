@@ -47,6 +47,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.biometric.BiometricPrompt
+import androidx.biometric.BiometricManager
 import androidx.core.content.ContextCompat
 import android.widget.Toast
 
@@ -80,7 +81,64 @@ fun VaultScreen(
     pinError: String?,
     vaultItems: List<VaultItemEntity>
 ) {
+    val context = LocalContext.current
+    val activity = remember(context) { context as? FragmentActivity }
+    val executor = remember(context) { ContextCompat.getMainExecutor(context) }
+    
+    val isBiometricAvailable = remember(context) {
+        val biometricManager = BiometricManager.from(context)
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+                BiometricManager.Authenticators.BIOMETRIC_WEAK
+        biometricManager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
     var biometricEnabled by rememberSaveable { mutableStateOf(true) }
+
+    val showBiometricPrompt = remember(activity, executor, viewModel, isBiometricAvailable, biometricEnabled) {
+        {
+            if (activity != null && isBiometricAvailable && biometricEnabled) {
+                val biometricPrompt = BiometricPrompt(
+                    activity,
+                    executor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            super.onAuthenticationError(errorCode, errString)
+                            if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && 
+                                errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                                viewModel.onBiometricError(errString.toString())
+                            }
+                        }
+
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            super.onAuthenticationSucceeded(result)
+                            viewModel.onBiometricSuccess()
+                        }
+
+                        override fun onAuthenticationFailed() {
+                            super.onAuthenticationFailed()
+                            viewModel.onBiometricError("Authentication failed")
+                        }
+                    }
+                )
+
+                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Unlock Vault")
+                    .setSubtitle("Authenticate using your biometric credential")
+                    .setNegativeButtonText("Use PIN")
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+                            BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                    .build()
+
+                biometricPrompt.authenticate(promptInfo)
+            }
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(isUnlocked, isBiometricAvailable, biometricEnabled) {
+        if (!isUnlocked && isBiometricAvailable && biometricEnabled) {
+            showBiometricPrompt()
+        }
+    }
     var autoLockTimer by rememberSaveable { mutableStateOf("1 minute") }
     var showChangePinDialog by rememberSaveable { mutableStateOf(false) }
     var changePinOld by rememberSaveable { mutableStateOf("") }
@@ -198,7 +256,7 @@ fun VaultScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "Enter 4-Digit Master PIN (Default: 1234)",
+                text = "Enter 4-Digit Master PIN",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -239,14 +297,18 @@ fun VaultScreen(
                 items(keypadDigits) { digit ->
                     when (digit) {
                         "BIO" -> {
-                            IconButton(
-                                onClick = { viewModel.authenticateBiometric() },
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(EmeraldGreen.copy(alpha = 0.15f))
-                            ) {
-                                Icon(Icons.Default.Fingerprint, contentDescription = stringResource(R.string.biometric), tint = EmeraldGreen)
+                            if (isBiometricAvailable && biometricEnabled) {
+                                IconButton(
+                                    onClick = { showBiometricPrompt() },
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(EmeraldGreen.copy(alpha = 0.15f))
+                                ) {
+                                    Icon(Icons.Default.Fingerprint, contentDescription = stringResource(R.string.biometric), tint = EmeraldGreen)
+                                }
+                            } else {
+                                Box(modifier = Modifier.size(64.dp))
                             }
                         }
                         "DEL" -> {
@@ -353,22 +415,24 @@ fun VaultScreen(
                             color = BhagwaOrange
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(text = stringResource(R.string.biometric_unlock), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text(text = stringResource(R.string.use_fingerprint_or_face_id_to_), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (isBiometricAvailable) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(text = stringResource(R.string.biometric_unlock), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text(text = stringResource(R.string.use_fingerprint_or_face_id_to_), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = biometricEnabled,
+                                    onCheckedChange = { biometricEnabled = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = BhagwaOrange)
+                                )
                             }
-                            Switch(
-                                checked = biometricEnabled,
-                                onCheckedChange = { biometricEnabled = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = BhagwaOrange)
-                            )
+                            Spacer(modifier = Modifier.height(12.dp))
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -405,6 +469,42 @@ fun VaultScreen(
                             ) {
                                 Text(stringResource(R.string.change), fontSize = 12.sp)
                             }
+                        }
+                    }
+                }
+            }
+            // Best-effort Overwrite Disclaimer
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = "Best-Effort Overwrite Disclaimer",
+                            tint = BhagwaOrange,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Text(
+                                text = "Best-Effort Source Overwrite",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "When encrypting a file to the Vault, the original source is overwritten matching its exact file size (3-pass random/zeros data) before deletion.\n\nDisclaimer: Modern flash/SSD storage utilizes physical Wear-Leveling controllers. Software-level overwriting is performed on a best-effort basis and does not guarantee absolute block-level physical erasure.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 16.sp
+                            )
                         }
                     }
                 }

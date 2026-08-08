@@ -113,6 +113,21 @@ class KeystoreVaultManager {
         return EncryptedResult(ciphertext = ciphertext, iv = iv)
     }
 
+    fun getEncryptionCipher(): Cipher {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val secretKey = getSecretKey()
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+        return cipher
+    }
+
+    fun getDecryptionCipher(iv: ByteArray): Cipher {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val secretKey = getSecretKey()
+        val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
+        return cipher
+    }
+
     fun decryptBytes(ciphertext: ByteArray, iv: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         val secretKey = getSecretKey()

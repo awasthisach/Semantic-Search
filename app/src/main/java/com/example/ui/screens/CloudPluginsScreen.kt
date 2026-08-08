@@ -50,10 +50,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.CloudSyncItemEntity
 import com.example.data.PluginEntity
 import com.example.ui.MainViewModel
+import androidx.compose.ui.graphics.Color
+
 import com.example.ui.theme.BhagwaOrange
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SkyCyan
 import com.example.ui.theme.SoftGold
+
 @Composable
 fun CloudPluginsScreen(
     viewModel: MainViewModel,
@@ -313,3 +316,30 @@ fun PluginManagerSection(
         }
     }
 }
+
+@Composable
+private fun SectionChip(
+    title: String,
+    index: Int,
+    selectedIndex: Int,
+    color: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    val isSelected = index == selectedIndex
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) color else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.testTag("section_tab_$index")
+    ) {
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        )
+    }
+}
+
+

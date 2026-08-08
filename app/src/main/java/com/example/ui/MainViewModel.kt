@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 typealias DuplicateGroup = com.example.data.DuplicateGroup
 @kotlinx.coroutines.ExperimentalCoroutinesApi
+@kotlinx.coroutines.FlowPreview
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = (application as com.example.VVFApplication).repository
     private val _globalError = MutableStateFlow<String?>(null)
@@ -76,9 +78,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setSimilarityThreshold(value: Float) {
         _similarityThreshold.value = value
     }
+
+    // Auto-clean duplicates in background preference toggle
+    private val appPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("vvf_app_settings", android.content.Context.MODE_PRIVATE)
+    }
+    private val _autoCleanDuplicatesBg = MutableStateFlow(
+        appPrefs.getBoolean("auto_clean_duplicates_bg", false)
+    )
+    val autoCleanDuplicatesBg: StateFlow<Boolean> = _autoCleanDuplicatesBg.asStateFlow()
+    fun setAutoCleanDuplicatesBg(enabled: Boolean) {
+        _autoCleanDuplicatesBg.value = enabled
+        appPrefs.edit().putBoolean("auto_clean_duplicates_bg", enabled).apply()
+    }
     // Secure Vault Lock & PIN State
-    private val _userPin = MutableStateFlow("1234") // Default master pin for demo
-    val userPin: StateFlow<String> = _userPin.asStateFlow()
     private val _enteredPin = MutableStateFlow("")
     val enteredPin: StateFlow<String> = _enteredPin.asStateFlow()
     private val _isVaultUnlocked = MutableStateFlow(false)
@@ -108,10 +121,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _enteredPin.value = ""
         }
     }
-    fun authenticateBiometric() {
+    fun onBiometricSuccess() {
         _isVaultUnlocked.value = true
         _pinError.value = null
         _enteredPin.value = ""
+    }
+    fun onBiometricError(errorMsg: String) {
+        _pinError.value = errorMsg
     }
     fun changeVaultPin(oldPin: String, newPin: String): Boolean {
         val success = repository.changeVaultPin(oldPin, newPin)
@@ -146,6 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val ocrScannedFiles: StateFlow<List<FileItemEntity>> = repository.ocrScannedFiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val semanticSearchResults: StateFlow<List<FileItemEntity>> = _semanticQuery
+        .debounce(300)
         .flatMapLatest { query -> repository.searchSemanticFiles(query) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recycleBinFiles: StateFlow<List<FileItemEntity>> = repository.recycleBinFiles
@@ -185,7 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     init {
         viewModelScope.launch {
-            combine(_selectedCategory, _searchQuery) { _, _ -> }.collect {
+            combine(_selectedCategory, _searchQuery.debounce(300)) { _, _ -> }.collect {
                 resetPagination()
             }
         }
@@ -239,8 +256,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cleanSelectedDuplicates() {
         viewModelScope.launch(coroutineExceptionHandler) {
             val ids = _selectedDuplicateIds.value
-            val toDelete = ids.mapNotNull { repository.getFileById(it) }
-            toDelete.forEach { repository.moveToRecycleBin(it) }
+            repository.cleanSelectedDuplicates(ids)
             _selectedDuplicateIds.value = emptySet()
         }
     }
@@ -322,7 +338,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     name = file.name,
                     path = file.absolutePath,
                     category = inferCategoryFromFilename(file.name),
-                    sizeBytes = if (file.exists()) file.length() else 1024L,
+                    sizeBytes = if (file.exists()) file.length() else 0L,
                     tags = "Local_Import"
                 )
             }
@@ -336,12 +352,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(coroutineExceptionHandler) {
             val context = getApplication<Application>().applicationContext
             val entities = uris.mapIndexed { index, uri ->
-                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "Picked_File_${System.currentTimeMillis()}_$index.bin"
+                var fileName = "Picked_File_${System.currentTimeMillis()}_$index.bin"
+                var sizeBytes = 0L
+                try {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (cursor.moveToFirst()) {
+                            if (nameIndex != -1) {
+                                val nameVal = cursor.getString(nameIndex)
+                                if (!nameVal.isNullOrBlank()) {
+                                    fileName = nameVal
+                                }
+                            }
+                            if (sizeIndex != -1) {
+                                sizeBytes = cursor.getLong(sizeIndex)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    uri.lastPathSegment?.substringAfterLast('/')?.let { nameVal ->
+                        if (nameVal.isNotBlank()) {
+                            fileName = nameVal
+                        }
+                    }
+                }
+                if (sizeBytes < 0L) {
+                    sizeBytes = 0L
+                }
                 FileItemEntity(
                     name = fileName,
                     path = uri.toString(),
                     category = inferCategoryFromFilename(fileName),
-                    sizeBytes = 1024L * (index + 1) * 256,
+                    sizeBytes = sizeBytes,
                     tags = "SAF_Import"
                 )
             }
