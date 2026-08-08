@@ -10,8 +10,13 @@ import kotlinx.coroutines.withContext
 class VaultRepository(
     private val context: Context,
     private val dao: FileDao,
-    private val keystoreVaultManager: KeystoreVaultManager
+    private val keystoreVaultManager: KeystoreVaultManager,
+    private val vaultManagerEngine: VaultManagerEngine = VaultManagerEngine(context, keystoreVaultManager)
 ) {
+    fun getStoredVaultPinHash(): String = vaultManagerEngine.getStoredVaultPinHash()
+    fun verifyVaultPin(inputPin: String, storedHash: String = ""): Boolean = vaultManagerEngine.verifyVaultPin(inputPin, storedHash)
+    fun changeVaultPin(oldPin: String, newPin: String): Boolean = vaultManagerEngine.changeVaultPin(oldPin, newPin)
+
     suspend fun encryptToVault(file: FileItemEntity) = withContext(Dispatchers.IO) {
         val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path, keystoreVaultManager)
 

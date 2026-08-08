@@ -7,14 +7,22 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.io.File
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class OcrEngineTest {
 
+    private lateinit var context: Context
+    private lateinit var mlKitOcrEngine: MLKitOcrEngine
     private lateinit var fakeDao: FakeFileDao
     private lateinit var fakeOcrEngine: FakeOcrEngine
     private lateinit var repository: SmartManagerRepository
 
-    // Hand-crafted Fake implementing FileDao interface to bypass Room and MockK/ByteBuddy limitations
     class FakeFileDao : FileDao {
         var unhashedFiles = mutableListOf<FileItemEntity>()
         var plugins = mutableListOf<PluginEntity>()
@@ -68,7 +76,6 @@ class OcrEngineTest {
         override suspend fun insertPlugins(plugins: List<PluginEntity>) {}
     }
 
-    // Hand-crafted Fake implementing OcrEngine interface to bypass ML Kit library dependencies
     class FakeOcrEngine : OcrEngine {
         var resultText = ""
         var shouldThrowException = false
@@ -85,17 +92,44 @@ class OcrEngineTest {
 
     @Before
     fun setUp() {
+        context = RuntimeEnvironment.getApplication()
+        mlKitOcrEngine = MLKitOcrEngine(context)
+
         fakeDao = FakeFileDao()
         fakeOcrEngine = FakeOcrEngine()
-        
-        // Pass relaxed/null dependencies safely for pure JUnit execution
-        val mockContext = org.mockito.Mockito.mock(Context::class.java)
-        repository = SmartManagerRepository(mockContext, fakeDao, fakeOcrEngine)
+        repository = SmartManagerRepository(context, fakeDao, fakeOcrEngine)
+    }
+
+    @Test
+    fun testMLKitOcrEngine_nonExistentFile_returnsEmptyStringWithoutCrash() = runBlocking {
+        val nonExistentPath = "/non_existent_dir_xyz/non_existent_image.jpg"
+        val result = mlKitOcrEngine.extractRealOcrText(nonExistentPath)
+
+        assertEquals("", result)
+    }
+
+    @Test
+    fun testMLKitOcrEngine_nonExistentPdf_returnsEmptyStringWithoutCrash() = runBlocking {
+        val nonExistentPdfPath = "/non_existent_dir_xyz/non_existent_document.pdf"
+        val result = mlKitOcrEngine.extractRealOcrText(nonExistentPdfPath)
+
+        assertEquals("", result)
+    }
+
+    @Test
+    fun testMLKitOcrEngine_unreadableFile_returnsEmptyStringWithoutCrash() = runBlocking {
+        val tempFile = File.createTempFile("unreadable_", ".tmp")
+        try {
+            tempFile.setReadable(false)
+            val result = mlKitOcrEngine.extractRealOcrText(tempFile.absolutePath)
+            assertEquals("", result)
+        } finally {
+            tempFile.delete()
+        }
     }
 
     @Test
     fun test_empty_or_null_ocr_result_does_not_generate_fabricated_data() = runBlocking {
-        // (a) When real OCR result is empty/null, database does NOT save any fabricated GSTIN/amount/date patterns
         fakeOcrEngine.resultText = ""
 
         val testFile = FileItemEntity(
@@ -119,14 +153,9 @@ class OcrEngineTest {
         }
 
         repository.startIncrementalDuplicateScan()
-
-        // Wait until scanning completes deterministically
         latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
 
-        // Verify that update was called but the OCR text remains blank, and no fabricated data got generated
         val updatedFile = fakeDao.updatedFiles.find { it.id == 501L }
-        
-        // Note: If no modification was made, it might not be in updatedFiles. If it is updated (e.g. hash or semantic index changes), we verify ocrText.
         if (updatedFile != null) {
             assertEquals("", updatedFile.ocrText)
             assertFalse(updatedFile.ocrText.contains("27AAAC"))
@@ -138,7 +167,6 @@ class OcrEngineTest {
 
     @Test
     fun test_mocked_real_ocr_result_correctly_saved_to_entity() = runBlocking {
-        // (b) Mocked real OCR result is correctly passed and saved into FileItemEntity.ocrText
         fakeOcrEngine.resultText = "AUTHENTIC OCR CONTENT EXTRACTED FROM IMAGE"
 
         val testFile = FileItemEntity(
@@ -162,23 +190,16 @@ class OcrEngineTest {
         }
 
         repository.startIncrementalDuplicateScan()
-
-        // Wait until scanning completes deterministically
         latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
 
         val updatedFile = fakeDao.updatedFiles.find { it.id == 502L }
         assertNotNull(updatedFile)
-        
-        // Verify real OCR text is saved perfectly
         assertEquals("AUTHENTIC OCR CONTENT EXTRACTED FROM IMAGE", updatedFile!!.ocrText)
-        
-        // Assert NO fabricated templates are present
         assertFalse(updatedFile.ocrText.contains("27AAAC"))
     }
 
     @Test
     fun test_ocr_engine_unavailability_handled_gracefully_without_fabrication() = runBlocking {
-        // (c) When OCR Engine is unavailable or throws an exception, the system handles it gracefully and does not fabricate data
         fakeOcrEngine.shouldThrowException = true
 
         val testFile = FileItemEntity(
@@ -202,17 +223,11 @@ class OcrEngineTest {
         }
 
         repository.startIncrementalDuplicateScan()
-
-        // Wait until scanning completes deterministically
         latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
 
         val updatedFile = fakeDao.updatedFiles.find { it.id == 503L }
-        
         if (updatedFile != null) {
-            // Should remain empty because OCR extraction failed
             assertEquals("", updatedFile.ocrText)
-            
-            // No fabricated patterns
             assertFalse(updatedFile.ocrText.contains("27AAAC"))
             assertFalse(updatedFile.ocrText.contains("GSTIN"))
         }

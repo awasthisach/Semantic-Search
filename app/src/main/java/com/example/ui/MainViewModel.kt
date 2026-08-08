@@ -67,6 +67,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _searchQuery.value = query
     }
     // Natural Language / Semantic AI Search Query
+    val isSemanticSearchAvailable: Boolean = repository.isSemanticSearchAvailable
     private val _semanticQuery = MutableStateFlow("")
     val semanticQuery: StateFlow<String> = _semanticQuery.asStateFlow()
     fun setSemanticQuery(query: String) {

@@ -147,17 +147,13 @@ object LightweightEmbeddingEngine {
 class FallbackSemanticEmbeddingProvider : SemanticEmbeddingProvider {
     override val embeddingVersion: Int = 1
     override fun isModelLoaded(): Boolean = false
-    override suspend fun generateImageEmbedding(file: File): FloatArray? {
-        return LightweightEmbeddingEngine.generateImageEmbedding(file)
-    }
-    override suspend fun generateTextEmbedding(text: String): FloatArray? {
-        return LightweightEmbeddingEngine.generateTextEmbedding(text)
-    }
+    override suspend fun generateImageEmbedding(file: File): FloatArray? = null
+    override suspend fun generateTextEmbedding(text: String): FloatArray? = null
 }
 
 /**
  * Real TFLite / On-Device AI Embedding Engine Implementation (Step 6).
- * Manages TFLite Interpreter inference pipeline with graceful fallback when model is missing.
+ * Manages TFLite Interpreter inference pipeline with graceful fallback when model or vocab is missing.
  */
 class TFLiteSemanticEmbeddingProvider(
     modelFile: File? = null
@@ -165,6 +161,7 @@ class TFLiteSemanticEmbeddingProvider(
     override val embeddingVersion: Int = 1
 
     private var interpreter: Interpreter? = null
+    private var vocabMap: Map<String, Int>? = null
     private var vectorDimension: Int = 512
 
     init {
@@ -190,17 +187,58 @@ class TFLiteSemanticEmbeddingProvider(
         } catch (e: Exception) {
             Log.w("TFLiteSemantic", "Failed to load TFLite model from file: ${e.message}")
             interpreter = null
+            vocabMap = null
             false
         }
     }
 
     /**
-     * Safely attempts to initialize the TFLite Interpreter from an Android Asset file.
-     * Guarantees no crashes if the asset is missing or corrupted.
-     * Bypasses ashmem memory pinning on Android Q+ by loading model into a direct ByteBuffer.
+     * Safely attempts to initialize the TFLite Interpreter and Vocab Tokenizer from Android Asset files.
+     * Guarantees no crashes if assets are missing or corrupted.
+     * Requires both TFLite model and vocabulary asset to consider model loaded.
      */
-    fun loadModelFromAssets(context: Context, assetName: String = "mobile_clip_embedding.tflite"): Boolean {
+    fun loadModelFromAssets(
+        context: Context,
+        assetName: String = "mobile_clip_embedding.tflite",
+        vocabAsset: String = "mobile_clip_vocab.txt"
+    ): Boolean {
         return try {
+            val vocabExists = try {
+                context.assets.open(vocabAsset).use { true }
+            } catch (e: Exception) {
+                false
+            }
+            val modelExists = try {
+                context.assets.open(assetName).use { true }
+            } catch (e: Exception) {
+                false
+            }
+
+            if (!vocabExists || !modelExists) {
+                Log.i("TFLiteSemantic", "Required model asset '$assetName' or vocab asset '$vocabAsset' not found in assets.")
+                interpreter = null
+                vocabMap = null
+                return false
+            }
+
+            // Load vocabulary mapping
+            val map = mutableMapOf<String, Int>()
+            context.assets.open(vocabAsset).bufferedReader().useLines { lines ->
+                lines.forEachIndexed { index, line ->
+                    val token = line.trim()
+                    if (token.isNotEmpty()) {
+                        map[token] = index
+                    }
+                }
+            }
+
+            if (map.isEmpty()) {
+                Log.w("TFLiteSemantic", "Vocab asset '$vocabAsset' is empty.")
+                interpreter = null
+                vocabMap = null
+                return false
+            }
+
             val inputStream = context.assets.open(assetName)
             val bytes = inputStream.readBytes()
             val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
@@ -208,10 +246,18 @@ class TFLiteSemanticEmbeddingProvider(
                 put(bytes)
                 rewind()
             }
-            loadModelFromBuffer(buffer)
+
+            if (loadModelFromBuffer(buffer)) {
+                vocabMap = map
+                true
+            } else {
+                vocabMap = null
+                false
+            }
         } catch (e: Exception) {
-            Log.i("TFLiteSemantic", "TFLite model asset '$assetName' not found in assets (optional feature): ${e.message}")
+            Log.i("TFLiteSemantic", "TFLite model or vocab asset not found in assets (optional feature): ${e.message}")
             interpreter = null
+            vocabMap = null
             false
         }
     }
@@ -228,12 +274,13 @@ class TFLiteSemanticEmbeddingProvider(
         } catch (e: Exception) {
             Log.w("TFLiteSemantic", "Failed to load TFLite model from buffer: ${e.message}")
             interpreter = null
+            vocabMap = null
             false
         }
     }
 
     override fun isModelLoaded(): Boolean {
-        return interpreter != null
+        return interpreter != null && !vocabMap.isNullOrEmpty()
     }
 
     private fun decodeSampledBitmapFromFile(file: File, reqWidth: Int, reqHeight: Int): Bitmap? {
@@ -301,10 +348,11 @@ class TFLiteSemanticEmbeddingProvider(
 
     override suspend fun generateTextEmbedding(text: String): FloatArray? {
         if (text.isBlank()) return null
+        if (!isModelLoaded()) return null
         val activeInterpreter = interpreter ?: return null
 
         return try {
-            val inputBuffer = convertTextToByteBuffer(text)
+            val inputBuffer = convertTextToByteBuffer(text) ?: return null
             val outputArray = Array(1) { FloatArray(vectorDimension) }
 
             activeInterpreter.run(inputBuffer, outputArray)
@@ -332,13 +380,14 @@ class TFLiteSemanticEmbeddingProvider(
         return byteBuffer
     }
 
-    private fun convertTextToByteBuffer(text: String): ByteBuffer {
+    private fun convertTextToByteBuffer(text: String): ByteBuffer? {
+        val map = vocabMap ?: return null
         val maxTokens = 128
         val byteBuffer = ByteBuffer.allocateDirect(4 * maxTokens)
         byteBuffer.order(ByteOrder.nativeOrder())
         val words = text.take(maxTokens * 10).lowercase().split(Regex("\\s+"))
         for (i in 0 until maxTokens) {
-            val tokenVal = if (i < words.size) (words[i].hashCode() and 0x7FFFFFFF) % 10000 else 0
+            val tokenVal = if (i < words.size) map[words[i]] ?: 0 else 0
             byteBuffer.putFloat(tokenVal.toFloat())
         }
         return byteBuffer

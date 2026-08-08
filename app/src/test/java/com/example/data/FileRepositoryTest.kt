@@ -4,11 +4,22 @@ import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class FileRepositoryTest {
 
     private lateinit var context: Context
@@ -16,26 +27,36 @@ class FileRepositoryTest {
     private lateinit var repository: FileRepository
 
     class FakeFileDao : FileDao {
-        var filesMap = mutableMapOf<Long, FileItemEntity>()
         var updatedFile: FileItemEntity? = null
+        var updateFileCallCount = 0
 
-        override suspend fun getFileById(id: Long): FileItemEntity? {
-            return filesMap[id]
-        }
-
-        override suspend fun getFilteredFilesPaged(category: String?, query: String, limit: Int, offset: Int): List<FileItemEntity> {
-            return filesMap.values.filter { file ->
-                (category == null || file.category == category) &&
-                (query.isEmpty() || file.name.contains(query, ignoreCase = true) || file.tags.contains(query, ignoreCase = true))
-            }.take(limit)
-        }
+        var getFilteredFilesPagedCalled = false
+        var lastCategory: String? = null
+        var lastQuery: String = ""
+        var lastLimit: Int = 0
+        var lastOffset: Int = 0
+        var pagedReturnList: List<FileItemEntity> = emptyList()
 
         override suspend fun updateFile(file: FileItemEntity) {
-            filesMap[file.id] = file
             updatedFile = file
+            updateFileCallCount++
         }
 
-        // Dummy overrides
+        override suspend fun getFilteredFilesPaged(
+            category: String?,
+            query: String,
+            limit: Int,
+            offset: Int
+        ): List<FileItemEntity> {
+            getFilteredFilesPagedCalled = true
+            lastCategory = category
+            lastQuery = query
+            lastLimit = limit
+            lastOffset = offset
+            return pagedReturnList
+        }
+
+        override suspend fun getFileById(id: Long): FileItemEntity? = null
         override suspend fun getFileByName(name: String): FileItemEntity? = null
         override fun getOcrScannedFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> = flowOf(emptyList())
@@ -68,37 +89,122 @@ class FileRepositoryTest {
 
     @Before
     fun setUp() {
-        context = Mockito.mock(Context::class.java)
+        context = RuntimeEnvironment.getApplication()
         fakeDao = FakeFileDao()
         repository = FileRepository(context, fakeDao)
     }
 
     @Test
-    fun testGetFileByIdDelegation() = runBlocking {
-        val sampleFile = FileItemEntity(id = 42, name = "sample.txt", path = "/path/to/sample.txt", category = "DOCUMENTS", sizeBytes = 100)
-        fakeDao.filesMap[42L] = sampleFile
+    fun testRenameFile_success_updatesDatabase() = runBlocking {
+        val tempFile = File.createTempFile("test_file_", ".txt")
+        tempFile.writeText("sample content")
+        val originalFile = FileItemEntity(
+            id = 1L,
+            name = tempFile.name,
+            path = tempFile.absolutePath,
+            category = "DOCUMENTS",
+            sizeBytes = tempFile.length()
+        )
+        val newName = "renamed_file.txt"
 
-        val result = repository.getFileById(42)
-        assertEquals(sampleFile, result)
+        try {
+            val updatedFile = repository.renameFile(originalFile, newName)
+
+            assertEquals(newName, updatedFile.name)
+            assertTrue("New path should end with new name", updatedFile.path.endsWith(newName))
+            assertEquals(1, fakeDao.updateFileCallCount)
+            assertEquals(1L, fakeDao.updatedFile?.id)
+            assertEquals(newName, fakeDao.updatedFile?.name)
+            assertEquals(updatedFile.path, fakeDao.updatedFile?.path)
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+            val renamedFile = File(tempFile.parentFile, newName)
+            if (renamedFile.exists()) {
+                renamedFile.delete()
+            }
+        }
     }
 
     @Test
-    fun testGetFilteredFilesPagedDelegation() = runBlocking {
-        val file1 = FileItemEntity(id = 1, name = "a.jpg", path = "/a.jpg", category = "IMAGES", sizeBytes = 1024)
-        val file2 = FileItemEntity(id = 2, name = "b.jpg", path = "/b.jpg", category = "IMAGES", sizeBytes = 2048)
-        fakeDao.filesMap[1L] = file1
-        fakeDao.filesMap[2L] = file2
+    fun testRenameFile_failure_throwsExceptionAndDoesNotUpdateDatabase() = runBlocking {
+        val nonExistentPath = "/non_existent_directory_vvf/non_existent_file.txt"
+        val originalFile = FileItemEntity(
+            id = 2L,
+            name = "non_existent_file.txt",
+            path = nonExistentPath,
+            category = "DOCUMENTS",
+            sizeBytes = 100L
+        )
+        val newName = "should_fail.txt"
 
-        val result = repository.getFilteredFilesPaged("IMAGES", "jpg", 10, 0)
-        assertEquals(2, result.size)
-        assertEquals("a.jpg", result[0].name)
+        try {
+            repository.renameFile(originalFile, newName)
+            fail("Expected exception for non-existent file rename")
+        } catch (e: Exception) {
+            assertTrue(
+                "Exception should be FileNotFoundException or IOException, but was ${e.javaClass.simpleName}",
+                e is FileNotFoundException || e is IOException
+            )
+        }
+
+        assertEquals(0, fakeDao.updateFileCallCount)
+        assertNull(fakeDao.updatedFile)
     }
 
     @Test
-    fun testAddTagToFile() = runBlocking {
-        val initialFile = FileItemEntity(id = 10, name = "doc.pdf", path = "/doc.pdf", category = "DOCUMENTS", sizeBytes = 500, tags = "")
-        val updated = repository.addTagToFile(initialFile, "important")
-        assertEquals("important", updated.tags)
-        assertEquals("important", fakeDao.updatedFile?.tags)
+    fun testAddTagToFile_emptyTags() = runBlocking {
+        val fileWithNoTags = FileItemEntity(
+            id = 3L,
+            name = "photo.jpg",
+            path = "/storage/photo.jpg",
+            category = "IMAGES",
+            sizeBytes = 500L,
+            tags = ""
+        )
+
+        val result = repository.addTagToFile(fileWithNoTags, "nature")
+
+        assertEquals("nature", result.tags)
+        assertEquals(1, fakeDao.updateFileCallCount)
+        assertEquals(3L, fakeDao.updatedFile?.id)
+        assertEquals("nature", fakeDao.updatedFile?.tags)
+    }
+
+    @Test
+    fun testAddTagToFile_existingTagsPreserved() = runBlocking {
+        val fileWithTags = FileItemEntity(
+            id = 4L,
+            name = "photo.jpg",
+            path = "/storage/photo.jpg",
+            category = "IMAGES",
+            sizeBytes = 500L,
+            tags = "family, vacation"
+        )
+
+        val result = repository.addTagToFile(fileWithTags, "2026")
+
+        assertEquals("family, vacation, 2026", result.tags)
+        assertEquals(1, fakeDao.updateFileCallCount)
+        assertEquals(4L, fakeDao.updatedFile?.id)
+        assertEquals("family, vacation, 2026", fakeDao.updatedFile?.tags)
+    }
+
+    @Test
+    fun testGetFilteredFilesPaged_delegatesToDaoWithExactParams() = runBlocking {
+        val expectedList = listOf(
+            FileItemEntity(id = 5L, name = "report.pdf", path = "/report.pdf", category = "DOCUMENTS", sizeBytes = 1024L)
+        )
+        fakeDao.pagedReturnList = expectedList
+
+        val result = repository.getFilteredFilesPaged("DOCUMENTS", "report", 10, 0)
+
+        assertEquals(expectedList, result)
+        assertTrue(fakeDao.getFilteredFilesPagedCalled)
+        assertEquals("DOCUMENTS", fakeDao.lastCategory)
+        assertEquals("report", fakeDao.lastQuery)
+        assertEquals(10, fakeDao.lastLimit)
+        assertEquals(0, fakeDao.lastOffset)
     }
 }

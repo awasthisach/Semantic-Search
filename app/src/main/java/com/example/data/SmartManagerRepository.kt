@@ -34,6 +34,10 @@ open class SmartManagerRepository(
     val keystoreVaultManager = KeystoreVaultManager()
     val storageScanner = StorageScanner(context)
 
+    val fileRepository by lazy { FileRepository(context, dao) }
+    val vaultRepository by lazy { VaultRepository(context, dao, keystoreVaultManager, vaultManagerEngine) }
+    val pluginRepository by lazy { PluginRepository(dao) }
+
     // Extracted Single-Responsibility Engine Components
     private val activeOcrEngine: OcrEngine by lazy { ocrEngine ?: MLKitOcrEngine(context) }
     private val vaultManagerEngine = VaultManagerEngine(context, keystoreVaultManager)
@@ -48,7 +52,7 @@ open class SmartManagerRepository(
     }
 
     val tfliteProvider: SemanticEmbeddingProvider by lazy {
-        if (isAssetExists(context, "mobile_clip_embedding.tflite")) {
+        if (isAssetExists(context, "mobile_clip_embedding.tflite") && isAssetExists(context, "mobile_clip_vocab.txt")) {
             try {
                 TFLiteSemanticEmbeddingProvider().apply { loadModelFromAssets(context) }
             } catch (e: Throwable) {
@@ -58,6 +62,9 @@ open class SmartManagerRepository(
             FallbackSemanticEmbeddingProvider()
         }
     }
+
+    val isSemanticSearchAvailable: Boolean
+        get() = tfliteProvider is TFLiteSemanticEmbeddingProvider && tfliteProvider.isModelLoaded()
 
     private val duplicateDetectionEngine by lazy {
         DuplicateDetectionEngine(storageScanner, tfliteProvider)
@@ -75,15 +82,16 @@ open class SmartManagerRepository(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    val activeFiles: Flow<List<FileItemEntity>> = dao.getAllActiveFiles()
+    val activeFiles: Flow<List<FileItemEntity>> = fileRepository.getAllActiveFiles()
     val recentFiles: Flow<List<FileItemEntity>> = dao.getRecentFiles()
     val categoryStats: Flow<List<CategoryStat>> = dao.getCategoryStats()
     val ocrScannedFiles: Flow<List<FileItemEntity>> = dao.getOcrScannedFiles()
 
-    suspend fun getFileById(id: Long) = dao.getFileById(id)
+    suspend fun getFileById(id: Long) = fileRepository.getFileById(id)
     suspend fun getFileByName(name: String) = dao.getFileByName(name)
 
     fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> {
+        if (!isSemanticSearchAvailable) return kotlinx.coroutines.flow.flowOf(emptyList())
         if (query.isBlank()) return dao.getAllActiveFiles()
         return dao.getAllActiveFiles().map { files ->
             val queryVec = tfliteProvider.generateTextEmbedding(query)
@@ -118,7 +126,7 @@ open class SmartManagerRepository(
     val recycleBinFiles: Flow<List<FileItemEntity>> = dao.getRecycleBinFiles()
     val vaultItems: Flow<List<VaultItemEntity>> = dao.getAllVaultItems()
     val cloudSyncItems: Flow<List<CloudSyncItemEntity>> = dao.getCloudSyncItems()
-    val plugins: Flow<List<PluginEntity>> = dao.getAllPlugins()
+    val plugins: Flow<List<PluginEntity>> = pluginRepository.getAllPlugins()
 
     // Real SHA-256 Exact Hash Duplicates computed via Room SQL subquery
     val exactDuplicates: Flow<List<DuplicateGroup>> = dao.getDuplicateFilesByHash().map { duplicateFiles ->
@@ -507,96 +515,46 @@ open class SmartManagerRepository(
     /**
      * Real Keystore AES-256-GCM Encryption for Secure Vault + Physical Source Wipe
      */
-    suspend fun encryptToVault(file: FileItemEntity) = withContext(Dispatchers.IO) {
-        val vaultStorageResult = PhysicalStorageManager.encryptAndWipeSource(context, file.path, keystoreVaultManager)
-
-        if (vaultStorageResult.isSuccess) {
-            val res = vaultStorageResult.getOrThrow()
-            val ivBase64 = Base64.encodeToString(res.iv, Base64.NO_WRAP)
-            dao.updateFile(file.copy(isVault = true))
-            dao.insertVaultItem(
-                VaultItemEntity(
-                    originalName = file.name,
-                    encryptedName = res.encryptedFileName,
-                    encryptedFilePath = res.vaultFilePath,
-                    ivBase64 = ivBase64,
-                    category = file.category,
-                    sizeBytes = file.sizeBytes
-                )
-            )
-        } else {
-            throw vaultStorageResult.exceptionOrNull() ?: java.io.IOException("Failed to encrypt and wipe source file")
-        }
-    }
+    suspend fun encryptToVault(file: FileItemEntity) = vaultRepository.encryptToVault(file)
 
     /**
      * Real Keystore AES-256-GCM Decryption for Vault Unlock
      */
-    suspend fun unlockFromVault(vaultItem: VaultItemEntity, file: FileItemEntity?): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val targetFile = file ?: dao.getVaultFileByName(vaultItem.originalName)
-            if (targetFile != null) {
-                val iv = Base64.decode(vaultItem.ivBase64, Base64.DEFAULT)
-                val decryptResult = PhysicalStorageManager.decryptAndRestore(
-                    context,
-                    vaultItem.encryptedFilePath,
-                    targetFile.path,
-                    iv,
-                    keystoreVaultManager
-                )
-                if (decryptResult.isSuccess) {
-                    dao.updateFile(targetFile.copy(isVault = false))
-                    dao.deleteVaultItemById(vaultItem.id)
-                    true
-                } else {
-                    throw decryptResult.exceptionOrNull() ?: java.io.IOException("Failed to physically decrypt vault file")
-                }
-            } else {
-                dao.deleteVaultItemById(vaultItem.id)
-                true
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("SmartManagerRepository", "Failed to unlock from vault: ${e.message}", e)
-            throw e
-        }
-    }
+    suspend fun unlockFromVault(vaultItem: VaultItemEntity, file: FileItemEntity?): Boolean = vaultRepository.unlockFromVault(vaultItem, file)
 
     fun getStoredVaultPinHash(): String {
-        return vaultManagerEngine.getStoredVaultPinHash()
+        return vaultRepository.getStoredVaultPinHash()
     }
 
     open fun verifyVaultPin(inputPin: String, storedHash: String = ""): Boolean {
-        return vaultManagerEngine.verifyVaultPin(inputPin, storedHash)
+        return vaultRepository.verifyVaultPin(inputPin, storedHash)
     }
 
     open fun changeVaultPin(oldPin: String, newPin: String): Boolean {
-        return vaultManagerEngine.changeVaultPin(oldPin, newPin)
+        return vaultRepository.changeVaultPin(oldPin, newPin)
     }
 
     suspend fun getFilteredFilesPaged(category: String?, query: String, limit: Int, offset: Int): List<FileItemEntity> = withContext(Dispatchers.IO) {
         withRetry {
-            dao.getFilteredFilesPaged(category, query, limit, offset)
+            fileRepository.getFilteredFilesPaged(category, query, limit, offset)
         }
     }
 
     suspend fun renameFile(file: FileItemEntity, newName: String) = withContext(Dispatchers.IO) {
         withRetry {
-            val renameResult = PhysicalStorageManager.renameFile(context, file.path, newName)
-            val newPath = renameResult.getOrDefault(file.path)
-            dao.updateFile(file.copy(name = newName, path = newPath))
+            fileRepository.renameFile(file, newName)
         }
     }
 
     suspend fun addTagToFile(file: FileItemEntity, tag: String) = withContext(Dispatchers.IO) {
         withRetry {
-            val currentTags = if (file.tags.isBlank()) tag else "${file.tags}, $tag"
-            dao.updateFile(file.copy(tags = currentTags))
+            fileRepository.addTagToFile(file, tag)
         }
     }
 
     suspend fun togglePlugin(pluginId: String, currentEnabled: Boolean) = withContext(Dispatchers.IO) {
         withRetry {
-            dao.setPluginEnabled(pluginId, !currentEnabled)
+            pluginRepository.togglePlugin(pluginId, currentEnabled)
         }
     }
 

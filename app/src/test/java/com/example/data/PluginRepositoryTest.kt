@@ -1,13 +1,20 @@
 package com.example.data
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class PluginRepositoryTest {
 
     private lateinit var fakeDao: FakeFileDao
@@ -15,6 +22,7 @@ class PluginRepositoryTest {
 
     class FakeFileDao : FileDao {
         var pluginsList = mutableListOf<PluginEntity>()
+        var setPluginEnabledCallCount = 0
         var lastToggledPluginId: String? = null
         var lastToggledEnabled: Boolean? = null
 
@@ -23,6 +31,7 @@ class PluginRepositoryTest {
         }
 
         override suspend fun setPluginEnabled(id: String, enabled: Boolean) {
+            setPluginEnabledCallCount++
             lastToggledPluginId = id
             lastToggledEnabled = enabled
             val idx = pluginsList.indexOfFirst { it.pluginId == id }
@@ -31,7 +40,7 @@ class PluginRepositoryTest {
             }
         }
 
-        // Dummy overrides
+        // Dummy overrides for FileDao interface
         override suspend fun getFileById(id: Long): FileItemEntity? = null
         override suspend fun getFileByName(name: String): FileItemEntity? = null
         override fun getOcrScannedFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
@@ -70,7 +79,7 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun testGetAllPlugins() = runBlocking {
+    fun testPluginsFlow_passesDataFromDao() = runBlocking {
         val samplePlugins = listOf(
             PluginEntity("ocr", "OCR Plugin", "OCR", "Extracts text from images", isEnabled = true, isCore = true),
             PluginEntity("cloud", "S3 Sync", "CLOUD_PROVIDER", "Syncs files with S3", isEnabled = false, isCore = false)
@@ -78,21 +87,37 @@ class PluginRepositoryTest {
         fakeDao.pluginsList.addAll(samplePlugins)
 
         val result = repository.getAllPlugins().first()
+
         assertEquals(2, result.size)
         assertEquals("ocr", result[0].pluginId)
         assertTrue(result[0].isEnabled)
+        assertEquals("cloud", result[1].pluginId)
         assertFalse(result[1].isEnabled)
     }
 
     @Test
-    fun testTogglePlugin() = runBlocking {
-        val plugin = PluginEntity("cloud", "S3 Sync", "CLOUD_PROVIDER", "Syncs files with S3", isEnabled = false, isCore = false)
+    fun testTogglePlugin_fromEnabledToDisabled() = runBlocking {
+        val plugin = PluginEntity("ocr", "OCR Plugin", "OCR", "Extracts text", isEnabled = true, isCore = true)
         fakeDao.pluginsList.add(plugin)
 
-        repository.togglePlugin("cloud", false)
+        repository.togglePlugin("ocr", currentEnabled = true)
+
+        assertEquals("ocr", fakeDao.lastToggledPluginId)
+        assertEquals(false, fakeDao.lastToggledEnabled)
+        assertEquals(1, fakeDao.setPluginEnabledCallCount)
+        assertFalse(fakeDao.pluginsList[0].isEnabled)
+    }
+
+    @Test
+    fun testTogglePlugin_fromDisabledToEnabled() = runBlocking {
+        val plugin = PluginEntity("cloud", "S3 Sync", "CLOUD_PROVIDER", "Syncs files", isEnabled = false, isCore = false)
+        fakeDao.pluginsList.add(plugin)
+
+        repository.togglePlugin("cloud", currentEnabled = false)
 
         assertEquals("cloud", fakeDao.lastToggledPluginId)
         assertEquals(true, fakeDao.lastToggledEnabled)
+        assertEquals(1, fakeDao.setPluginEnabledCallCount)
         assertTrue(fakeDao.pluginsList[0].isEnabled)
     }
 }

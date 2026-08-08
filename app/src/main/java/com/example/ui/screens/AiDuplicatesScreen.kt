@@ -490,7 +490,15 @@ fun DuplicateCleanerSection(
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
-        if (semanticDuplicates.isEmpty()) {
+        if (!viewModel.isSemanticSearchAvailable) {
+            item {
+                Text(
+                    text = "Semantic Search — Coming Soon (model not bundled)",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (semanticDuplicates.isEmpty()) {
             item {
                 Text(
                     text = "No AI semantic vector matches detected.",
@@ -678,7 +686,8 @@ fun SemanticSearchSection(
     semanticQuery: String,
     semanticSearchResults: List<FileItemEntity>
 ) {
-val results = semanticSearchResults
+    val isAvailable = viewModel.isSemanticSearchAvailable
+    val results = if (isAvailable) semanticSearchResults else emptyList()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Card(
@@ -688,7 +697,11 @@ val results = semanticSearchResults
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Psychology, contentDescription = stringResource(R.string.ai), tint = EmeraldGreen)
+                        Icon(
+                            Icons.Default.Psychology,
+                            contentDescription = stringResource(R.string.ai),
+                            tint = if (isAvailable) EmeraldGreen else MaterialTheme.colorScheme.outline
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "TFLite AI Semantic Search Engine",
@@ -698,16 +711,34 @@ val results = semanticSearchResults
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Natural Language Search across all file metadata, tags, and OCR text using on-device lightweight embeddings.",
+                        text = if (isAvailable) {
+                            "Natural Language Search across all file metadata, tags, and OCR text using on-device lightweight embeddings."
+                        } else {
+                            "Semantic Search — Coming Soon (model not bundled). TFLite model and vocabulary assets are required for vector search."
+                        },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = semanticQuery,
-                        onValueChange = { viewModel.setSemanticQuery(it) },
-                        placeholder = { Text(stringResource(R.string.e_g_electricity_bill_tax_invoi)) },
-                        leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = EmeraldGreen) },
+                        value = if (isAvailable) semanticQuery else "",
+                        onValueChange = { if (isAvailable) viewModel.setSemanticQuery(it) },
+                        enabled = isAvailable,
+                        placeholder = {
+                            Text(
+                                if (isAvailable)
+                                    stringResource(R.string.e_g_electricity_bill_tax_invoi)
+                                else
+                                    "Semantic Search — Coming Soon (model not bundled)"
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (isAvailable) EmeraldGreen else MaterialTheme.colorScheme.outline
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("semantic_search_input"),
@@ -724,38 +755,65 @@ val results = semanticSearchResults
                 fontSize = 15.sp
             )
         }
-        items(results, key = { it.id }) { file ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+        if (!isAvailable) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = file.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(
-                            text = if (file.ocrText.isNotBlank()) "Match OCR: ${file.ocrText.take(50)}..." else "Match Tag/Name: ${file.tags}",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = EmeraldGreen.copy(alpha = 0.2f)
+                    Text(
+                        text = "Semantic Search — Coming Soon (model not bundled)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+        } else if (results.isEmpty()) {
+            item {
+                Text(
+                    text = "No semantic search results found.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+        } else {
+            items(results, key = { it.id }) { file ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Score 96%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldGreen,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = file.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                text = if (file.ocrText.isNotBlank()) "Match OCR: ${file.ocrText.take(50)}..." else "Match Tag/Name: ${file.tags}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = EmeraldGreen.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "Score 96%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldGreen,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
             }

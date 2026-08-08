@@ -115,7 +115,7 @@ fun CloudSyncSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CloudDone, contentDescription = null, tint = EmeraldGreen)
+                            Icon(Icons.Default.CloudQueue, contentDescription = null, tint = SoftGold)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Google Drive (Core Provider)",
@@ -125,20 +125,20 @@ fun CloudSyncSection(
                         }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = EmeraldGreen.copy(alpha = 0.2f)
+                            color = SoftGold.copy(alpha = 0.2f)
                         ) {
                             Text(
-                                text = "Authorized",
+                                text = "Not Connected",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = EmeraldGreen,
+                                color = SoftGold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "REST API & Credential Manager OAuth2 integration. Auto-sync queue with resume upload & version history.",
+                        text = "Cloud Sync: Local Queue Only (no account linked). Direct REST API upload queue.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
