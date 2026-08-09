@@ -18,8 +18,10 @@ jobs:
 
       - name: Ensure valid gradle-wrapper.jar
         run: |
-          curl -sL -o gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/android/sunflower/main/gradle/wrapper/gradle-wrapper.jar"
-          unzip -t gradle/wrapper/gradle-wrapper.jar
+          if ! java -jar gradle/wrapper/gradle-wrapper.jar --version >/dev/null 2>&1; then
+            echo "gradle-wrapper.jar is invalid or missing, generating a fresh wrapper..."
+            gradle wrapper
+          fi
           chmod +x gradlew
 
       - name: Write google-services.json from secret
