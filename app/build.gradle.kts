@@ -158,5 +158,6 @@ detekt {
   buildUponDefaultConfig = true
   allRules = false
   ignoreFailures = true
+  config.setFrom(file("config/detekt/detekt.yml"))
   baseline = file("detekt-baseline.xml")
 }

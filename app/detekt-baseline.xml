@@ -30,30 +30,6 @@
     <ID>EmptyFunctionBlock:VaultRepositoryTest.kt$VaultRepositoryTest.FakeFileDao${}</ID>
     <ID>ExplicitGarbageCollectionCall:PhysicalStorageManager.kt$PhysicalStorageManager$gc()</ID>
     <ID>ExplicitGarbageCollectionCall:SemanticEmbeddingProvider.kt$TFLiteSemanticEmbeddingProvider$gc()</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$@Composable fun AiDuplicatesScreen( viewModel: MainViewModel, level1Duplicates: List&lt;DuplicateGroup&gt;, level3Duplicates: List&lt;DuplicateGroup&gt;, similarityThreshold: Float, selectedDuplicateIds: Set&lt;Long&gt;, semanticQuery: String, ocrScannedFiles: List&lt;FileItemEntity&gt;, semanticSearchResults: List&lt;FileItemEntity&gt; )</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$@Composable fun DuplicateCleanerSection( viewModel: MainViewModel, level1Duplicates: List&lt;DuplicateGroup&gt;, level3Duplicates: List&lt;DuplicateGroup&gt;, similarityThreshold: Float, selectedDuplicateIds: Set&lt;Long&gt; )</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$@Composable fun DuplicateGroupCard( group: DuplicateGroup, selectedIds: Set&lt;Long&gt;, onToggleSelect: (Long) -&gt; Unit )</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$@Composable fun OcrEngineSection(ocrScannedFiles: List&lt;FileItemEntity&gt;)</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$@Composable fun SemanticSearchSection( viewModel: MainViewModel, semanticQuery: String, semanticSearchResults: List&lt;FileItemEntity&gt; )</ID>
-    <ID>FunctionNaming:AiDuplicatesScreen.kt$private @Composable fun SectionChip( title: String, index: Int, selectedIndex: Int, color: Color, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:CloudPluginsScreen.kt$@Composable fun CloudPluginsScreen( viewModel: MainViewModel, cloudSyncItems: List&lt;CloudSyncItemEntity&gt;, plugins: List&lt;PluginEntity&gt; )</ID>
-    <ID>FunctionNaming:CloudPluginsScreen.kt$@Composable fun CloudSyncSection( viewModel: MainViewModel, syncItems: List&lt;CloudSyncItemEntity&gt;, conflictMode: String, onConflictModeChange: (String) -&gt; Unit )</ID>
-    <ID>FunctionNaming:CloudPluginsScreen.kt$@Composable fun PluginManagerSection( viewModel: MainViewModel, plugins: List&lt;PluginEntity&gt; )</ID>
-    <ID>FunctionNaming:CloudPluginsScreen.kt$@Composable private fun SectionChip( title: String, index: Int, selectedIndex: Int, color: androidx.compose.ui.graphics.Color, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:DashboardScreen.kt$@Composable fun CategoryRow( title: String, category: FileCategory, categoryStats: List&lt;CategoryStat&gt;, icon: ImageVector, color: Color, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:DashboardScreen.kt$@Composable fun DashboardFileCard( file: FileItemEntity, onEncrypt: () -&gt; Unit, onDelete: () -&gt; Unit, onAddTag: (String) -&gt; Unit )</ID>
-    <ID>FunctionNaming:DashboardScreen.kt$@Composable fun DashboardScreen( viewModel: MainViewModel, categoryStats: List&lt;CategoryStat&gt;, recentFiles: List&lt;FileItemEntity&gt;, onNavigateTab: (Int) -&gt; Unit )</ID>
-    <ID>FunctionNaming:DashboardScreen.kt$@Composable fun QuickActionButton( title: String, subtitle: String, icon: ImageVector, color: Color, modifier: Modifier = Modifier, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:FileManagerScreen.kt$@Composable fun FileManagerItemRow(modifier: Modifier = Modifier, file: FileItemEntity, onRename: () -&gt; Unit, onEncrypt: () -&gt; Unit, onDelete: () -&gt; Unit, onAddTag: (String) -&gt; Unit )</ID>
-    <ID>FunctionNaming:FileManagerScreen.kt$@Composable fun FileManagerScreen( viewModel: MainViewModel, files: List&lt;FileItemEntity&gt;, recycleBinFiles: List&lt;FileItemEntity&gt;, selectedCategory: FileCategory?, searchQuery: String )</ID>
-    <ID>FunctionNaming:FileManagerScreen.kt$@Composable fun LocalFilePickerCard( onFilesPicked: (List&lt;Uri&gt;) -&gt; Unit, modifier: Modifier = Modifier )</ID>
-    <ID>FunctionNaming:FilePickerUI.kt$@Composable fun PickableFileRowItem( file: PickableLocalFile, isSelected: Boolean, onToggleSelect: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:FilePickerUI.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun FilePickerSheet( isOpen: Boolean, onDismiss: () -&gt; Unit, onFilesSelected: (List&lt;PickableLocalFile&gt;) -&gt; Unit, onUrisSelected: (List&lt;Uri&gt;) -&gt; Unit )</ID>
-    <ID>FunctionNaming:MainActivity.kt$@Composable fun Greeting(name: String, modifier: Modifier = Modifier)</ID>
-    <ID>FunctionNaming:Theme.kt$@Composable fun MyApplicationTheme( darkTheme: Boolean = isSystemInDarkTheme(), dynamicColor: Boolean = false, content: @Composable () -&gt; Unit )</ID>
-    <ID>FunctionNaming:Theme.kt$@Composable fun VVFSmartManagerTheme( darkTheme: Boolean = isSystemInDarkTheme(), dynamicColor: Boolean = false, // Set false to prioritize VVF brand palette content: @Composable () -&gt; Unit )</ID>
-    <ID>FunctionNaming:VVFSmartManagerApp.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun VVFSmartManagerApp(viewModel: MainViewModel)</ID>
-    <ID>FunctionNaming:VaultScreen.kt$@Composable fun VaultScreen( viewModel: MainViewModel, isUnlocked: Boolean, enteredPin: String, pinError: String?, vaultItems: List&lt;VaultItemEntity&gt; )</ID>
     <ID>ImplicitDefaultLocale:DuplicateDetectionEngineTest.kt$DuplicateDetectionEngineTest$String.format("%04x", groupKey)</ID>
     <ID>ImplicitDefaultLocale:FilePickerUI.kt$String.format("%.1f KB", kb)</ID>
     <ID>ImplicitDefaultLocale:FilePickerUI.kt$String.format("%.1f MB", mb)</ID>

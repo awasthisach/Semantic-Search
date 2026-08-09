@@ -261,6 +261,9 @@ object PhysicalStorageManager {
 
             notifyMediaStoreFileChanged(context, "", targetFile.absolutePath)
             Result.success(targetFile.absolutePath)
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException in decryptAndRestore: Incorrect PIN or tampered vault data", e)
+            Result.failure(java.security.GeneralSecurityException("Decryption failed: Incorrect PIN or tampered vault data.", e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in decryptAndRestore: ${e.message}")
             System.gc()
@@ -316,6 +319,9 @@ object PhysicalStorageManager {
 
             notifyMediaStoreFileChanged(context, "", targetFile.absolutePath)
             Result.success(targetFile.absolutePath)
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException in decryptAndRestore Stream: Incorrect PIN or tampered vault data", e)
+            Result.failure(java.security.GeneralSecurityException("Decryption failed: Incorrect PIN or tampered vault data.", e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in decryptAndRestore Stream: ${e.message}")
             System.gc()
@@ -374,6 +380,9 @@ object PhysicalStorageManager {
                     iv = iv
                 )
             )
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException in encryptAndWipeSource: Tampered key or data", e)
+            Result.failure(java.security.GeneralSecurityException("Encryption failed: Incorrect key or tampered data.", e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in encryptAndWipeSource: ${e.message}")
             System.gc()
@@ -437,6 +446,9 @@ object PhysicalStorageManager {
                     iv = iv
                 )
             )
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException in encryptAndWipeSource Stream: Tampered key or data", e)
+            Result.failure(java.security.GeneralSecurityException("Encryption failed: Incorrect key or tampered data.", e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in encryptAndWipeSource Stream: ${e.message}")
             System.gc()

@@ -105,12 +105,20 @@ class KeystoreVaultManager {
     }
 
     fun encryptBytes(data: ByteArray): EncryptedResult {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        val secretKey = getSecretKey()
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-        val iv = cipher.iv
-        val ciphertext = cipher.doFinal(data)
-        return EncryptedResult(ciphertext = ciphertext, iv = iv)
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val secretKey = getSecretKey()
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            val iv = cipher.iv
+            val ciphertext = cipher.doFinal(data)
+            EncryptedResult(ciphertext = ciphertext, iv = iv)
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException during encryption: Tampered or invalid key/tag", e)
+            throw java.security.GeneralSecurityException("Encryption failed: Tampered data or invalid security key tag.", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Encryption failed: ${e.message}", e)
+            throw e
+        }
     }
 
     fun getEncryptionCipher(): Cipher {
@@ -129,11 +137,19 @@ class KeystoreVaultManager {
     }
 
     fun decryptBytes(ciphertext: ByteArray, iv: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        val secretKey = getSecretKey()
-        val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
-        return cipher.doFinal(ciphertext)
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val secretKey = getSecretKey()
+            val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
+            cipher.doFinal(ciphertext)
+        } catch (e: javax.crypto.AEADBadTagException) {
+            Log.e(TAG, "AEADBadTagException during decryption: Incorrect PIN or tampered vault data", e)
+            throw java.security.GeneralSecurityException("Decryption failed: Incorrect PIN or tampered vault data.", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Decryption failed: ${e.message}", e)
+            throw e
+        }
     }
 
     /**

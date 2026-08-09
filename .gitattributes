@@ -1,6 +1,0 @@
-*.jar binary
-gradle/wrapper/gradle-wrapper.jar binary
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.keystore binary

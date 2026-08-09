@@ -173,17 +173,15 @@ class TFLiteSemanticEmbeddingProvider(
     /**
      * Safely attempts to initialize the TFLite Interpreter from a model file.
      * Prevents any runtime crashes if the file is invalid or unsupported.
-     * Bypasses ashmem memory pinning by loading model into a direct ByteBuffer.
+     * Uses memory-mapped FileChannel for efficient native memory access.
      */
     fun loadModelFromFile(modelFile: File): Boolean {
         return try {
-            val bytes = modelFile.readBytes()
-            val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
-                order(ByteOrder.nativeOrder())
-                put(bytes)
-                rewind()
+            java.io.FileInputStream(modelFile).use { fis ->
+                val fileChannel = fis.channel
+                val buffer = fileChannel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, modelFile.length())
+                loadModelFromBuffer(buffer)
             }
-            loadModelFromBuffer(buffer)
         } catch (e: Exception) {
             Log.w("TFLiteSemantic", "Failed to load TFLite model from file: ${e.message}")
             interpreter = null
@@ -239,12 +237,23 @@ class TFLiteSemanticEmbeddingProvider(
                 return false
             }
 
-            val inputStream = context.assets.open(assetName)
-            val bytes = inputStream.readBytes()
-            val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
-                order(ByteOrder.nativeOrder())
-                put(bytes)
-                rewind()
+            val buffer: ByteBuffer = try {
+                context.assets.openFd(assetName).use { afd ->
+                    java.io.FileInputStream(afd.fileDescriptor).use { fis ->
+                        fis.channel.map(
+                            java.nio.channels.FileChannel.MapMode.READ_ONLY,
+                            afd.startOffset,
+                            afd.declaredLength
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val bytes = context.assets.open(assetName).use { it.readBytes() }
+                ByteBuffer.allocateDirect(bytes.size).apply {
+                    order(ByteOrder.nativeOrder())
+                    put(bytes)
+                    rewind()
+                }
             }
 
             if (loadModelFromBuffer(buffer)) {
