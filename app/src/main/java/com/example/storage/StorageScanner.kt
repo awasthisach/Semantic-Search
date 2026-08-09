@@ -267,6 +267,7 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
             BitmapFactory.decodeFile(file.absolutePath, options)
             options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
             options.inJustDecodeBounds = false
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888
             BitmapFactory.decodeFile(file.absolutePath, options)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to decode sampled bitmap: ${e.message}")

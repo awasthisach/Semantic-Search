@@ -98,7 +98,10 @@ object LightweightEmbeddingEngine {
 
         try {
             if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") || lowerName.endsWith(".webp") || lowerName.endsWith(".bmp")) {
-                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = 4
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
                 val bitmap = BitmapFactory.decodeFile(file.absolutePath, options)
                 if (bitmap != null) {
                     val scaled = Bitmap.createScaledBitmap(bitmap, 8, 8, true)
@@ -301,6 +304,7 @@ class TFLiteSemanticEmbeddingProvider(
             
             options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
             options.inJustDecodeBounds = false
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888
             BitmapFactory.decodeFile(file.absolutePath, options)
         } catch (e: Exception) {
             Log.e("TFLiteSemantic", "Failed to decode sampled bitmap: ${e.message}")
