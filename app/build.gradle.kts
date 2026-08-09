@@ -6,8 +6,8 @@ plugins {
   alias(libs.plugins.secrets)
   alias(libs.plugins.detekt)
   // Firebase Google Services & Crashlytics plugins (Requires app/google-services.json to be added by user)
-  alias(libs.plugins.google.services) apply false
-  alias(libs.plugins.firebase.crashlytics) apply false
+  alias(libs.plugins.google.services)
+  alias(libs.plugins.firebase.crashlytics)
 }
 
 android {
