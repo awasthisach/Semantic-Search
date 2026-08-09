@@ -5,6 +5,9 @@ plugins {
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
   alias(libs.plugins.detekt)
+  // Firebase Google Services & Crashlytics plugins (Requires app/google-services.json to be added by user)
+  alias(libs.plugins.google.services) apply false
+  alias(libs.plugins.firebase.crashlytics) apply false
 }
 
 android {
@@ -124,6 +127,8 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.retrofit)
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.crashlytics)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
@@ -144,6 +149,7 @@ dependencies {
   androidTestImplementation(libs.androidx.runner)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.leakcanary.android)
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
@@ -152,4 +158,5 @@ detekt {
   buildUponDefaultConfig = true
   allRules = false
   ignoreFailures = true
+  baseline = file("detekt-baseline.xml")
 }

@@ -57,6 +57,8 @@ class VVFApplication : Application(), Configuration.Provider {
         instance = this
         Log.i("VVFApplication", "Initializing VVF Smart Manager Application Foundation...")
 
+        initCrashlytics()
+
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             setupBackgroundFileManagementTasks()
         }
@@ -125,6 +127,18 @@ class VVFApplication : Application(), Configuration.Provider {
             Log.i("VVFApplication", "All WorkManager background file management tasks successfully enqueued.")
         } catch (e: Exception) {
             Log.e("VVFApplication", "Failed to enqueue WorkManager background tasks: ${e.message}", e)
+        }
+    }
+
+    private fun initCrashlytics() {
+        try {
+            com.google.firebase.FirebaseApp.initializeApp(this)
+            val crashlytics = com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+            crashlytics.setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
+            crashlytics.setCustomKey("app_version", BuildConfig.VERSION_NAME)
+            Log.i("VVFApplication", "Firebase Crashlytics initialized successfully.")
+        } catch (e: Exception) {
+            Log.w("VVFApplication", "Firebase Crashlytics initialization pending (app/google-services.json required from Firebase Console): ${e.message}")
         }
     }
 
