@@ -26,9 +26,12 @@ jobs:
         chmod +x gradlew
 
     - name: Write google-services.json from secret
-      run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+      run: |
+        if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+        fi
 
-    - name: Verify google-services.json was written
+    - name: Verify google-services.json
       run: |
         ls -la app/google-services.json
         wc -c app/google-services.json
@@ -116,9 +119,12 @@ jobs:
           chmod +x gradlew
 
       - name: Write google-services.json from secret
-        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+          fi
 
-      - name: Verify google-services.json was written
+      - name: Verify google-services.json
         run: |
           ls -la app/google-services.json
           wc -c app/google-services.json
