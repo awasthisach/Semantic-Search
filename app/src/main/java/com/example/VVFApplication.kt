@@ -147,6 +147,9 @@ class VVFApplication : Application(), Configuration.Provider {
         Log.i("VVFApplication", "onTrimMemory called with level: $level. Delegating release of resources...")
         try {
             repository.trimMemory()
+            if (level >= TRIM_MEMORY_BACKGROUND) {
+                System.gc()
+            }
         } catch (e: Exception) {
             Log.e("VVFApplication", "Error during repository trimMemory: ${e.message}")
         }

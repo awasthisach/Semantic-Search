@@ -241,22 +241,15 @@ class TFLiteSemanticEmbeddingProvider(
             }
 
             val buffer: ByteBuffer = try {
-                context.assets.openFd(assetName).use { afd ->
-                    java.io.FileInputStream(afd.fileDescriptor).use { fis ->
-                        fis.channel.map(
-                            java.nio.channels.FileChannel.MapMode.READ_ONLY,
-                            afd.startOffset,
-                            afd.declaredLength
-                        )
-                    }
-                }
-            } catch (e: Exception) {
                 val bytes = context.assets.open(assetName).use { it.readBytes() }
                 ByteBuffer.allocateDirect(bytes.size).apply {
                     order(ByteOrder.nativeOrder())
                     put(bytes)
                     rewind()
                 }
+            } catch (e: Exception) {
+                Log.e("TFLiteSemantic", "Failed to load model asset $assetName: ${e.message}")
+                return false
             }
 
             if (loadModelFromBuffer(buffer)) {

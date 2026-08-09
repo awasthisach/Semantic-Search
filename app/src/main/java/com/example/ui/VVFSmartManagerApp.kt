@@ -108,7 +108,7 @@ fun VVFSmartManagerApp(viewModel: MainViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_vvf_golden_leaf),
+                                painter = painterResource(id = R.drawable.ic_launcher_legacy),
                                 contentDescription = stringResource(R.string.vvf_logo),
                                 tint = androidx.compose.ui.graphics.Color.Unspecified,
                                 modifier = Modifier.size(26.dp)
@@ -133,7 +133,7 @@ fun VVFSmartManagerApp(viewModel: MainViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
-                            contentDescription = "About",
+                            contentDescription = stringResource(R.string.about),
                             tint = androidx.compose.ui.graphics.Color.White
                         )
                     }

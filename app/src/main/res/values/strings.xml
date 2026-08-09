@@ -173,4 +173,6 @@
     <string name="plugin_desc">Master Spec Section 4 Core/Plugin split. Download or toggle optional extensions on demand.</string>
     <string name="registered_extensions">Registered Extensions (%1$d)</string>
     <string name="core_label">CORE</string>
+    <string name="back">Back</string>
+    <string name="about">About</string>
 </resources>

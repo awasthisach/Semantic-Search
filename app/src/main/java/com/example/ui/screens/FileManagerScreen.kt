@@ -154,7 +154,7 @@ fun FileManagerScreen(
                     .height(56.dp)
                     .testTag("open_file_picker_btn")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Import Files")
+                Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Pick", fontWeight = FontWeight.Bold)
             }

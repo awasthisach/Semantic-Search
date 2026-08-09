@@ -59,17 +59,28 @@ class MLKitOcrEngine(private val context: Context) : OcrEngine {
             }
         }
 
-        if (imageToProcess == null) return@withContext ""
+        if (imageToProcess == null) {
+            renderedBitmap?.recycle()
+            return@withContext ""
+        }
 
-        suspendCancellableCoroutine { continuation ->
-            textRecognizer.process(imageToProcess)
-                .addOnSuccessListener { visionText ->
-                    continuation.resume(visionText.text)
-                }
-                .addOnFailureListener { e ->
-                    Log.e("MLKitOcrEngine", "ML Kit text recognition failed on $filePath: ${e.message}")
-                    continuation.resume("")
-                }
+        try {
+            suspendCancellableCoroutine { continuation ->
+                textRecognizer.process(imageToProcess)
+                    .addOnSuccessListener { visionText ->
+                        if (continuation.isActive) {
+                            continuation.resume(visionText.text)
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("MLKitOcrEngine", "ML Kit text recognition failed on $filePath: ${e.message}")
+                        if (continuation.isActive) {
+                            continuation.resume("")
+                        }
+                    }
+            }
+        } finally {
+            renderedBitmap?.recycle()
         }
     }
 }
