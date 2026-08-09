@@ -17,6 +17,12 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v5
 
+    - name: Ensure valid gradle-wrapper.jar
+      run: |
+        curl -sL -o gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/android/sunflower/main/gradle/wrapper/gradle-wrapper.jar"
+        unzip -t gradle/wrapper/gradle-wrapper.jar
+        chmod +x gradlew
+
     - name: Write google-services.json from secret
       run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
 
@@ -98,6 +104,12 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
+
+      - name: Ensure valid gradle-wrapper.jar
+        run: |
+          curl -sL -o gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/android/sunflower/main/gradle/wrapper/gradle-wrapper.jar"
+          unzip -t gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
 
       - name: Write google-services.json from secret
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
