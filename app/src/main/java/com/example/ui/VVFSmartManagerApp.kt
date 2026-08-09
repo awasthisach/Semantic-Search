@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AiDuplicatesScreen
 import com.example.ui.screens.CloudPluginsScreen
 import com.example.ui.screens.DashboardScreen
@@ -123,7 +125,19 @@ fun VVFSmartManagerApp(viewModel: MainViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = CosmicBlue,
                     titleContentColor = androidx.compose.ui.graphics.Color.White
-                )
+                ),
+                actions = {
+                    androidx.compose.material3.IconButton(
+                        onClick = { viewModel.selectTab(5) },
+                        modifier = Modifier.testTag("about_menu_item")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "About",
+                            tint = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
@@ -225,6 +239,9 @@ fun VVFSmartManagerApp(viewModel: MainViewModel) {
                     viewModel = viewModel,
                     cloudSyncItems = cloudSyncItems,
                     plugins = plugins
+                )
+                5 -> AboutScreen(
+                    onBackClick = { viewModel.selectTab(0) }
                 )
             }
             }
