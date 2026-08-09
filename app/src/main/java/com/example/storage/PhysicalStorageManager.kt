@@ -263,7 +263,8 @@ object PhysicalStorageManager {
             Result.success(targetFile.absolutePath)
         } catch (e: javax.crypto.AEADBadTagException) {
             Log.e(TAG, "AEADBadTagException in decryptAndRestore: Incorrect PIN or tampered vault data", e)
-            Result.failure(java.security.GeneralSecurityException("Decryption failed: Incorrect PIN or tampered vault data.", e))
+            val msg = "Decryption failed: Incorrect PIN or tampered vault data."
+            Result.failure(java.security.GeneralSecurityException(msg, e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in decryptAndRestore: ${e.message}")
             System.gc()
@@ -321,7 +322,8 @@ object PhysicalStorageManager {
             Result.success(targetFile.absolutePath)
         } catch (e: javax.crypto.AEADBadTagException) {
             Log.e(TAG, "AEADBadTagException in decryptAndRestore Stream: Incorrect PIN or tampered vault data", e)
-            Result.failure(java.security.GeneralSecurityException("Decryption failed: Incorrect PIN or tampered vault data.", e))
+            val msg = "Decryption failed: Incorrect PIN or tampered vault data."
+            Result.failure(java.security.GeneralSecurityException(msg, e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in decryptAndRestore Stream: ${e.message}")
             System.gc()
@@ -382,7 +384,8 @@ object PhysicalStorageManager {
             )
         } catch (e: javax.crypto.AEADBadTagException) {
             Log.e(TAG, "AEADBadTagException in encryptAndWipeSource: Tampered key or data", e)
-            Result.failure(java.security.GeneralSecurityException("Encryption failed: Incorrect key or tampered data.", e))
+            val msg = "Encryption failed: Incorrect key or tampered data."
+            Result.failure(java.security.GeneralSecurityException(msg, e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in encryptAndWipeSource: ${e.message}")
             System.gc()
@@ -448,7 +451,8 @@ object PhysicalStorageManager {
             )
         } catch (e: javax.crypto.AEADBadTagException) {
             Log.e(TAG, "AEADBadTagException in encryptAndWipeSource Stream: Tampered key or data", e)
-            Result.failure(java.security.GeneralSecurityException("Encryption failed: Incorrect key or tampered data.", e))
+            val msg = "Encryption failed: Incorrect key or tampered data."
+            Result.failure(java.security.GeneralSecurityException(msg, e))
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OutOfMemoryError in encryptAndWipeSource Stream: ${e.message}")
             System.gc()

@@ -17,6 +17,14 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v5
 
+    - name: Write google-services.json from secret
+      run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+
+    - name: Verify google-services.json was written
+      run: |
+        ls -la app/google-services.json
+        wc -c app/google-services.json
+
     - name: Set up JDK 17
       uses: actions/setup-java@v5
       with:
@@ -90,6 +98,14 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
+
+      - name: Write google-services.json from secret
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+
+      - name: Verify google-services.json was written
+        run: |
+          ls -la app/google-services.json
+          wc -c app/google-services.json
 
       - name: Enable KVM
         run: |

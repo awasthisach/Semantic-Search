@@ -114,7 +114,8 @@ class KeystoreVaultManager {
             EncryptedResult(ciphertext = ciphertext, iv = iv)
         } catch (e: javax.crypto.AEADBadTagException) {
             Log.e(TAG, "AEADBadTagException during encryption: Tampered or invalid key/tag", e)
-            throw java.security.GeneralSecurityException("Encryption failed: Tampered data or invalid security key tag.", e)
+            val msg = "Encryption failed: Tampered data or invalid security key tag."
+            throw java.security.GeneralSecurityException(msg, e)
         } catch (e: Exception) {
             Log.e(TAG, "Encryption failed: ${e.message}", e)
             throw e
