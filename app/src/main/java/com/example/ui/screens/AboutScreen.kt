@@ -210,7 +210,10 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "Vishva Vijayaa Foundation is committed to bringing smart, AI-driven digital management and semantic search capabilities to empower organizations and individuals with seamless data organization, secure vault storage, and intelligent search.",
+                        text = "Vishva Vijayaa Foundation is committed to bringing smart, " +
+                            "AI-driven digital management and semantic search capabilities " +
+                            "to empower organizations and individuals with seamless data organization, " +
+                            "secure vault storage, and intelligent search.",
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
