@@ -88,6 +88,23 @@ class OcrEngineTest {
             lastCapturedPath = filePath
             return resultText
         }
+
+        override suspend fun extractOcrBlocks(filePath: String): List<com.example.data.OcrTextBlock> {
+            if (shouldThrowException) {
+                throw RuntimeException("ML Kit not initialized / GMS Core error")
+            }
+            lastCapturedPath = filePath
+            return if (resultText.isNotEmpty()) {
+                listOf(
+                    com.example.data.OcrTextBlock(
+                        text = resultText,
+                        boundingBox = android.graphics.Rect(10, 10, 100, 50),
+                        imageWidth = 500,
+                        imageHeight = 500
+                    )
+                )
+            } else emptyList()
+        }
     }
 
     @Before

@@ -39,7 +39,7 @@ open class SmartManagerRepository(
     val pluginRepository by lazy { PluginRepository(dao) }
 
     // Extracted Single-Responsibility Engine Components
-    private val activeOcrEngine: OcrEngine by lazy { ocrEngine ?: MLKitOcrEngine(context) }
+    val activeOcrEngine: OcrEngine by lazy { ocrEngine ?: MLKitOcrEngine(context) }
     private val vaultManagerEngine = VaultManagerEngine(context, keystoreVaultManager)
 
     private fun isAssetExists(context: Context, fileName: String): Boolean {

@@ -395,6 +395,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun extractOcrBlocks(filePath: String): List<com.example.data.OcrTextBlock> {
+        return repository.activeOcrEngine.extractOcrBlocks(filePath)
+    }
+
     private fun inferCategoryFromFilename(fileName: String): String {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return when (ext) {

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 import com.example.R
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -97,6 +98,10 @@ fun FileManagerScreen(
     var showFilePickerSheet by remember { mutableStateOf(false) }
     var renameTargetFile by remember { mutableStateOf<FileItemEntity?>(null) }
     var encryptTargetFile by remember { mutableStateOf<FileItemEntity?>(null) }
+    var ocrOverlayFile by remember { mutableStateOf<FileItemEntity?>(null) }
+    var ocrOverlayBlocks by remember { mutableStateOf<List<com.example.data.OcrTextBlock>>(emptyList()) }
+    var isOcrOverlayLoading by remember { mutableStateOf(false) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     var newFileNameText by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val isPageLoading by viewModel.isPageLoading.collectAsState()
@@ -352,7 +357,15 @@ fun FileManagerScreen(
                         },
                         onEncrypt = { encryptTargetFile = file },
                         onDelete = { viewModel.moveToRecycleBin(file) },
-                        onAddTag = { tag -> viewModel.addTagToFile(file, tag) }
+                        onAddTag = { tag -> viewModel.addTagToFile(file, tag) },
+                        onOcrOverlay = {
+                            ocrOverlayFile = file
+                            isOcrOverlayLoading = true
+                            coroutineScope.launch {
+                                ocrOverlayBlocks = viewModel.extractOcrBlocks(file.path)
+                                isOcrOverlayLoading = false
+                            }
+                        }
                     )
                 }
                 if (isPageLoading) {
@@ -455,6 +468,59 @@ fun FileManagerScreen(
             }
         )
     }
+
+    // OCR Overlay Preview Dialog
+    if (ocrOverlayFile != null) {
+        AlertDialog(
+            onDismissRequest = {
+                ocrOverlayFile = null
+                ocrOverlayBlocks = emptyList()
+            },
+            title = {
+                Text(
+                    text = "OCR Overlay: ${ocrOverlayFile?.name}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                if (isOcrOverlayLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = BhagwaOrange)
+                    }
+                } else {
+                    Column {
+                        Text(
+                            text = "Detected ${ocrOverlayBlocks.size} text blocks with bounding boxes:",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        com.example.ui.components.OcrOverlayImage(
+                            filePath = ocrOverlayFile!!.path,
+                            ocrBlocks = ocrOverlayBlocks,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        ocrOverlayFile = null
+                        ocrOverlayBlocks = emptyList()
+                    }
+                ) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 @Composable
 fun FileManagerItemRow(modifier: Modifier = Modifier, 
@@ -462,7 +528,8 @@ fun FileManagerItemRow(modifier: Modifier = Modifier,
     onRename: () -> Unit,
     onEncrypt: () -> Unit,
     onDelete: () -> Unit,
-    onAddTag: (String) -> Unit
+    onAddTag: (String) -> Unit,
+    onOcrOverlay: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
@@ -537,6 +604,14 @@ fun FileManagerItemRow(modifier: Modifier = Modifier,
                             onClick = {
                                 showMenu = false
                                 onEncrypt()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("OCR Overlay Preview") },
+                            leadingIcon = { Icon(Icons.Default.Image, contentDescription = null, tint = SkyCyan) },
+                            onClick = {
+                                showMenu = false
+                                onOcrOverlay()
                             }
                         )
                         DropdownMenuItem(
