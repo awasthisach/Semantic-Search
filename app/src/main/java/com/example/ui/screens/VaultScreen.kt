@@ -73,6 +73,10 @@ import com.example.ui.theme.BhagwaOrange
 import com.example.ui.theme.CosmicBlue
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SoftGold
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @Composable
 fun VaultScreen(
     viewModel: MainViewModel,

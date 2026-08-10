@@ -5,6 +5,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.ai.TFLiteSemanticEmbeddingProvider
 import com.example.storage.StorageScanner
 import com.example.data.DuplicateGroup
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import kotlinx.coroutines.runBlocking
@@ -163,6 +165,7 @@ class ExampleUnitTest {
     database.close()
   }
 
+  @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
   @Test
   fun mainViewModel_changeVaultPin_handlesUpdates() {
     val app = ApplicationProvider.getApplicationContext<android.app.Application>()
@@ -189,6 +192,7 @@ class ExampleUnitTest {
     assertArrayEquals(original, parsed!!, 0.0001f)
   }
 
+  @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
   @Test
   fun test_duplicateDetectionEngine_lsh_visualDuplicates() = runBlocking {
     val context = ApplicationProvider.getApplicationContext<Context>()
@@ -238,6 +242,7 @@ class ExampleUnitTest {
     assertFalse(duplicateGroup.files.any { it.id == 103L })
   }
 
+  @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
   @Test
   fun test_duplicateDetectionEngine_semanticDuplicates() = runBlocking {
     val context = ApplicationProvider.getApplicationContext<Context>()
