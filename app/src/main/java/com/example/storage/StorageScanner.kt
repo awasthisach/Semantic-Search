@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import com.example.data.FileCategory
@@ -19,7 +18,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 
 class StorageScanner(private val context: Context) : HammingDistanceCalculator {
@@ -28,9 +27,9 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
         private const val TAG = "StorageScanner"
     }
 
-    fun scanDeviceStorageFlow(computeHashes: Boolean = false): Flow<List<FileItemEntity>> = flow {
+    fun scanDeviceStorageFlow(computeHashes: Boolean = false): Flow<List<FileItemEntity>> = channelFlow {
         scanDeviceStorage(computeHashes) { batch ->
-            emit(batch)
+            send(batch)
         }
     }.flowOn(Dispatchers.IO)
 
@@ -67,26 +66,27 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
             Log.e(TAG, "Error scanning MediaStore: ${e.message}", e)
         }
 
-        // Supplementary Source: Raw Directory Traversal (Only if All Files Access / External storage manager or read permissions are granted)
-        val hasAllFilesAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            try {
-                Environment.getExternalStorageDirectory()?.canRead() == true
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        if (hasAllFilesAccess) {
-            try {
-                val externalDir = Environment.getExternalStorageDirectory()
-                if (externalDir != null && externalDir.exists() && externalDir.canRead()) {
-                    scanDirectoryRecursively(externalDir, processedPaths, depth = 0, maxDepth = 6, computeHashes = computeHashes, onItemDiscovered = emitItem)
+        // Supplementary Source: App-Private Storage Directory Traversal (Scoped Storage compliant)
+        try {
+            val appDirs = listOfNotNull(
+                context.getExternalFilesDir(null),
+                context.filesDir,
+                context.cacheDir
+            )
+            for (appDir in appDirs) {
+                if (appDir.exists() && appDir.canRead()) {
+                    scanDirectoryRecursively(
+                        dir = appDir,
+                        processedPaths = processedPaths,
+                        depth = 0,
+                        maxDepth = 4,
+                        computeHashes = computeHashes,
+                        onItemDiscovered = emitItem
+                    )
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error scanning external directory: ${e.message}", e)
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error scanning app-private directory: ${e.message}", e)
         }
 
         if (currentBatch.isNotEmpty()) {
