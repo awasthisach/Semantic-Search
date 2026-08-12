@@ -18,17 +18,20 @@ private fun MainViewModel.compatState(): VmCompatState = synchronized(compatStat
     compatStates.getOrPut(this) { VmCompatState() }
 }
 
+private fun <T> Flow<T>.stateInCompat(vm: MainViewModel, initial: T): StateFlow<T> =
+    stateIn(vm.viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
+
 val MainViewModel.filteredFiles: StateFlow<List<FileItemEntity>> get() = files
 val MainViewModel.categoryStats: StateFlow<List<CategoryStat>> get() = dashboardStats
-val MainViewModel.recentFiles: StateFlow<List<FileItemEntity>> get() = repository.recentFiles.stateInCompat(this)
-val MainViewModel.recycleBinFiles: StateFlow<List<FileItemEntity>> get() = repository.recycleBinFiles.stateInCompat(this)
-val MainViewModel.ocrScannedFiles: StateFlow<List<FileItemEntity>> get() = repository.ocrScannedFiles.stateInCompat(this)
-val MainViewModel.level1ExactDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.exactDuplicates.stateInCompat(this)
-val MainViewModel.level3VisualDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getVisualDuplicates(similarityThreshold).stateInCompat(this)
-val MainViewModel.videoDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getVideoDuplicates(similarityThreshold).stateInCompat(this)
-val MainViewModel.semanticDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getSemanticDuplicates(similarityThreshold).stateInCompat(this)
-val MainViewModel.documentDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getDocumentDuplicates().stateInCompat(this)
-val MainViewModel.documentStats: StateFlow<Triple<Int, Int, Float>> get() = repository.documentStats.stateInCompat(this)
+val MainViewModel.recentFiles: StateFlow<List<FileItemEntity>> get() = repository.recentFiles.stateInCompat(this, emptyList())
+val MainViewModel.recycleBinFiles: StateFlow<List<FileItemEntity>> get() = repository.recycleBinFiles.stateInCompat(this, emptyList())
+val MainViewModel.ocrScannedFiles: StateFlow<List<FileItemEntity>> get() = repository.ocrScannedFiles.stateInCompat(this, emptyList())
+val MainViewModel.level1ExactDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.exactDuplicates.stateInCompat(this, emptyList())
+val MainViewModel.level3VisualDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getVisualDuplicates(similarityThreshold).stateInCompat(this, emptyList())
+val MainViewModel.videoDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getVideoDuplicates(similarityThreshold).stateInCompat(this, emptyList())
+val MainViewModel.semanticDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getSemanticDuplicates(similarityThreshold).stateInCompat(this, emptyList())
+val MainViewModel.documentDuplicates: StateFlow<List<DuplicateGroup>> get() = repository.getDocumentDuplicates().stateInCompat(this, emptyList())
+val MainViewModel.documentStats: StateFlow<Triple<Int, Int, Float>> get() = repository.documentStats.stateInCompat(this, Triple(0, 0, 1f))
 val MainViewModel.selectedDuplicateIds: StateFlow<Set<Long>> get() = compatState().selectedIds
 val MainViewModel.isDuplicateScanning: StateFlow<Boolean> get() = repository.isScanning
 val MainViewModel.duplicateScanProgress: StateFlow<Float> get() = repository.scanProgress
@@ -39,12 +42,7 @@ val MainViewModel.pinError: StateFlow<String?> get() = compatState().pinError
 
 val MainViewModel.semanticSearchResults: StateFlow<List<FileItemEntity>> get() =
     semanticQuery.debounce(200).flatMapLatest { repository.searchSemanticFiles(it) }
-        .stateInCompat(this)
-
-private fun <T> Flow<T>.stateInCompat(vm: MainViewModel): StateFlow<T> =
-    stateIn(vm.viewModelScopeCompat(), SharingStarted.WhileSubscribed(5_000), kotlinx.coroutines.flow.emptyFlow<T>().let { null as T? } ?: error("unreachable"))
-
-private fun MainViewModel.viewModelScopeCompat() = viewModelScope
+        .stateInCompat(this, emptyList())
 
 fun MainViewModel.startDuplicateScan() { repository.startIncrementalDuplicateScan() }
 
@@ -63,7 +61,10 @@ fun MainViewModel.autoSelectExtraDuplicates() {
 fun MainViewModel.cleanSelectedDuplicates() {
     val ids = selectedDuplicateIds.value
     if (ids.isEmpty()) return
-    viewModelScope.launch { repository.cleanSelectedDuplicates(ids); compatState().selectedIds.value = emptySet() }
+    viewModelScope.launch {
+        repository.cleanSelectedDuplicates(ids)
+        compatState().selectedIds.value = emptySet()
+    }
 }
 
 fun MainViewModel.moveToRecycleBin(file: FileItemEntity) { viewModelScope.launch { repository.moveToRecycleBin(file) } }
@@ -72,7 +73,7 @@ fun MainViewModel.deletePermanently(file: FileItemEntity) { viewModelScope.launc
 fun MainViewModel.emptyRecycleBin() { viewModelScope.launch { repository.emptyRecycleBin() } }
 fun MainViewModel.encryptToVault(file: FileItemEntity) { viewModelScope.launch { repository.encryptToVault(file) } }
 fun MainViewModel.rescanPhysicalStorage() { viewModelScope.launch { repository.rescanPhysicalStorage() } }
-fun MainViewModel.loadNextPage() { /* Current source is reactive; pagination is retained as a compatibility hook. */ }
+fun MainViewModel.loadNextPage() { }
 
 fun MainViewModel.appendPinDigit(digit: String) {
     val state = compatState()
