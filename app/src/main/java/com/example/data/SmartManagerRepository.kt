@@ -180,7 +180,7 @@ open class SmartManagerRepository(
                             }
                         }
                         // Incremental SHA-256 calculation
-                        if (updated.md5Hash.isBlank()) {
+                        if (updated.md5Hash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 ensureActive()
@@ -191,7 +191,7 @@ open class SmartManagerRepository(
                             }
                         }
                         // Incremental Perceptual dHash calculation for images
-                        if (updated.category == FileCategory.IMAGES.name && updated.visualSimilarityHash.isBlank()) {
+                        if (updated.category == FileCategory.IMAGES.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 ensureActive()
@@ -202,7 +202,7 @@ open class SmartManagerRepository(
                             }
                         }
                         // Step 7: Incremental Perceptual Keyframe dHash calculation for videos
-                        if (updated.category == FileCategory.VIDEO.name && updated.visualSimilarityHash.isBlank()) {
+                        if (updated.category == FileCategory.VIDEO.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 ensureActive()
@@ -213,7 +213,7 @@ open class SmartManagerRepository(
                             }
                         }
                         // Phase 7 Step 1: Incremental Document Fingerprinting for PDFs/Documents
-                        if (updated.category == FileCategory.DOCUMENTS.name && updated.visualSimilarityHash.isBlank()) {
+                        if (updated.category == FileCategory.DOCUMENTS.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 ensureActive()
@@ -225,9 +225,9 @@ open class SmartManagerRepository(
                         }
                         // Step 6: Incremental On-Device AI Semantic Embedding inference
                         if (!updated.semanticIndexed) {
-                            val javaFile = File(updated.path)
                             val textContent = "${updated.name} ${updated.ocrText} ${updated.tags}".trim()
-                            val embedding = if (javaFile.exists() && javaFile.canRead()) {
+                            val javaFile = if (!updated.path.startsWith("content://")) File(updated.path) else null
+                            val embedding = if (javaFile != null && javaFile.exists() && javaFile.canRead()) {
                                 tfliteProvider.generateImageEmbedding(javaFile) ?: tfliteProvider.generateTextEmbedding(textContent)
                             } else {
                                 tfliteProvider.generateTextEmbedding(textContent)
@@ -558,7 +558,47 @@ open class SmartManagerRepository(
         }
     }
 
-    suspend fun addSyncItem(provider: String, fileName: String, size: Long, filePath: String = "") = withContext(Dispatchers.IO) {
+    fun observeCloudSyncItems(): Flow<List<CloudSyncItemEntity>> {
+        return dao.getCloudSyncItems()
+    }
+
+    private suspend fun isProviderEnabled(provider: String): Boolean {
+        val pluginId = when (provider.uppercase()) {
+            "GOOGLE_DRIVE" -> "gdrive_sync"
+            "ONEDRIVE" -> "onedrive_sync"
+            "DROPBOX" -> "dropbox_sync"
+            else -> null
+        } ?: return true
+        val plugins = dao.getAllPlugins().first()
+        val plugin = plugins.find { it.pluginId == pluginId }
+        return plugin?.isEnabled ?: true
+    }
+
+    suspend fun enqueueCloudSyncItem(
+        provider: String,
+        fileName: String,
+        size: Long,
+        filePath: String = "",
+        isCore: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isProviderEnabled(provider)) {
+            Log.w("SmartManagerRepository", "Cannot enqueue sync item: provider $provider is disabled.")
+            return@withContext false
+        }
+
+        val currentItems = dao.getCloudSyncItems().first()
+        val keyPath = if (filePath.isNotBlank()) filePath else fileName
+        val duplicate = currentItems.find { item ->
+            item.provider.equals(provider, ignoreCase = true) &&
+                    (if (item.filePath.isNotBlank()) item.filePath else item.fileName) == keyPath &&
+                    item.status in listOf("PENDING", "QUEUED", "UPLOADING", "SYNCED")
+        }
+
+        if (duplicate != null) {
+            Log.i("SmartManagerRepository", "Active or completed queue item already exists for $fileName ($provider). Status: ${duplicate.status}")
+            return@withContext false
+        }
+
         withRetry {
             dao.insertCloudSyncItem(
                 CloudSyncItemEntity(
@@ -567,10 +607,54 @@ open class SmartManagerRepository(
                     filePath = filePath,
                     fileSize = size,
                     status = "QUEUED",
-                    lastSyncedMs = System.currentTimeMillis()
+                    lastSyncedMs = System.currentTimeMillis(),
+                    isCore = isCore
                 )
             )
         }
+        enqueueCloudSyncWork()
+        true
+    }
+
+    suspend fun retryCloudSyncItem(id: Long): Boolean = withContext(Dispatchers.IO) {
+        val currentItems = dao.getCloudSyncItems().first()
+        val item = currentItems.find { it.id == id } ?: return@withContext false
+
+        if (item.status == "SYNCED") {
+            Log.i("SmartManagerRepository", "Item $id is already SYNCED. Retry ignored.")
+            return@withContext false
+        }
+
+        if (!isProviderEnabled(item.provider)) {
+            Log.w("SmartManagerRepository", "Cannot retry sync item: provider ${item.provider} is disabled.")
+            return@withContext false
+        }
+
+        val updated = item.copy(status = "QUEUED", lastSyncedMs = System.currentTimeMillis())
+        withRetry {
+            dao.insertCloudSyncItem(updated)
+        }
+        enqueueCloudSyncWork()
+        true
+    }
+
+    suspend fun cancelCloudSyncItem(id: Long): Boolean = withContext(Dispatchers.IO) {
+        val currentItems = dao.getCloudSyncItems().first()
+        val item = currentItems.find { it.id == id } ?: return@withContext false
+
+        if (item.status == "SYNCED") {
+            Log.i("SmartManagerRepository", "Item $id is already SYNCED. Destructive cancel ignored.")
+            return@withContext false
+        }
+
+        withRetry {
+            dao.deleteCloudSyncItem(id)
+        }
+        true
+    }
+
+    suspend fun addSyncItem(provider: String, fileName: String, size: Long, filePath: String = "") = withContext(Dispatchers.IO) {
+        enqueueCloudSyncItem(provider, fileName, size, filePath)
     }
 
     fun trimMemory() {

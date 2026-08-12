@@ -40,14 +40,22 @@ class FakeFileDao : FileDao {
         return flowOf(cloudSyncItems)
     }
 
+    private var autoSyncId = 1000L
+
     override suspend fun insertCloudSyncItem(item: CloudSyncItemEntity): Long {
-        val index = cloudSyncItems.indexOfFirst { it.id == item.id }
+        val assignedId = if (item.id == 0L) autoSyncId++ else item.id
+        val newItem = item.copy(id = assignedId)
+        val index = cloudSyncItems.indexOfFirst { it.id == assignedId }
         if (index != -1) {
-            cloudSyncItems[index] = item
+            cloudSyncItems[index] = newItem
         } else {
-            cloudSyncItems.add(item)
+            cloudSyncItems.add(newItem)
         }
-        return item.id
+        return assignedId
+    }
+
+    override suspend fun deleteCloudSyncItem(id: Long) {
+        cloudSyncItems.removeAll { it.id == id }
     }
 
     // Dummy overrides for FileDao interface
@@ -71,19 +79,40 @@ class FakeFileDao : FileDao {
     override suspend fun insertFile(file: FileItemEntity): Long = 0L
     override suspend fun insertFiles(files: List<FileItemEntity>) {}
     override suspend fun updateFile(file: FileItemEntity) {}
+    override suspend fun getFileByPath(path: String): FileItemEntity? = null
+    override suspend fun insertFileDirect(file: FileItemEntity): Long = 0L
+    override suspend fun getAllOrdinaryFilesDirect(): List<FileItemEntity> = emptyList()
+    override suspend fun deleteFilesByIds(ids: List<Long>) {}
     override suspend fun deleteFileById(id: Long) {}
     override suspend fun emptyRecycleBin() {}
     override suspend fun getVaultFileByName(name: String): FileItemEntity? = null
     override fun getAllVaultItems(): Flow<List<VaultItemEntity>> = flowOf(emptyList())
     override suspend fun insertVaultItem(item: VaultItemEntity): Long = 0L
     override suspend fun deleteVaultItemById(id: Long) {}
-    override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(emptyList())
-    override suspend fun setPluginEnabled(id: String, enabled: Boolean) {}
-    override suspend fun insertPlugins(plugins: List<PluginEntity>) {}
+    val pluginsList = mutableListOf<PluginEntity>()
+
+    override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(pluginsList)
+    override suspend fun setPluginEnabled(id: String, enabled: Boolean) {
+        val idx = pluginsList.indexOfFirst { it.pluginId == id }
+        if (idx != -1) {
+            pluginsList[idx] = pluginsList[idx].copy(isEnabled = enabled)
+        }
+    }
+    override suspend fun insertPlugins(plugins: List<PluginEntity>) {
+        plugins.forEach { plugin ->
+            val idx = pluginsList.indexOfFirst { it.pluginId == plugin.pluginId }
+            if (idx != -1) {
+                pluginsList[idx] = plugin
+            } else {
+                pluginsList.add(plugin)
+            }
+        }
+    }
 }
 
 class FakeCloudApiService : CloudApiService {
     var shouldFail: Boolean = false
+    var httpStatusCode: Int = 500
     var exceptionToThrow: Exception? = null
 
     override suspend fun uploadFile(
@@ -93,7 +122,7 @@ class FakeCloudApiService : CloudApiService {
         exceptionToThrow?.let { throw it }
         if (shouldFail) {
             return Response.error(
-                500,
+                httpStatusCode,
                 "{\"error\":\"Server error\"}".toResponseBody("application/json".toMediaTypeOrNull())
             )
         }
@@ -228,4 +257,108 @@ class CloudSyncWorkerTest {
 
         assertEquals(ListenableWorker.Result.failure(), result)
     }
+
+    @Test
+    fun testDisabledPluginProvider_skipsSyncAndReturnsSuccess() = runBlocking {
+        val tempFile = File.createTempFile("sync_test_disabled_plugin", ".txt")
+        tempFile.writeText("sample data for upload")
+        tempFile.deleteOnExit()
+
+        // Insert a disabled Dropbox plugin
+        fakeDao.insertPlugins(
+            listOf(
+                PluginEntity("dropbox_sync", "Dropbox Cloud Plugin", "CLOUD_PROVIDER", "Dropbox Cloud integration", isEnabled = false, isCore = false)
+            )
+        )
+
+        val syncItem = CloudSyncItemEntity(
+            id = 104L,
+            provider = "DROPBOX",
+            fileName = tempFile.name,
+            filePath = tempFile.absolutePath,
+            fileSize = tempFile.length(),
+            status = "PENDING",
+            lastSyncedMs = 0L,
+            isCore = false
+        )
+        fakeDao.insertCloudSyncItem(syncItem)
+
+        val worker = createWorker(runAttemptCount = 0)
+        val result = worker.doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+
+        val itemsInDb = fakeDao.getCloudSyncItems().first()
+        val itemInDb = itemsInDb.find { it.id == 104L }
+        // Item status should remain PENDING because it was skipped
+        assertEquals("PENDING", itemInDb?.status)
+    }
+
+    @Test
+    fun testHttp4xxFailure_returnsFailureWithoutRetry() = runBlocking {
+        val tempFile = File.createTempFile("sync_test_404", ".txt")
+        tempFile.writeText("sample data for upload")
+        tempFile.deleteOnExit()
+
+        val syncItem = CloudSyncItemEntity(
+            id = 105L,
+            provider = "GOOGLE_DRIVE",
+            fileName = tempFile.name,
+            filePath = tempFile.absolutePath,
+            fileSize = tempFile.length(),
+            status = "PENDING",
+            lastSyncedMs = 0L,
+            isCore = false
+        )
+        fakeDao.insertCloudSyncItem(syncItem)
+
+        fakeApiService.shouldFail = true
+        fakeApiService.httpStatusCode = 404
+
+        val worker = createWorker(runAttemptCount = 0)
+        val result = worker.doWork()
+
+        assertEquals(ListenableWorker.Result.failure(), result)
+
+        val itemsInDb = fakeDao.getCloudSyncItems().first()
+        val itemInDb = itemsInDb.find { it.id == 105L }
+        assertEquals("FAILED", itemInDb?.status)
+    }
+
+    @Test
+    fun testMissingLocalFile_returnsFailureWithoutRetry() = runBlocking {
+        val nonExistentFile = File(context.cacheDir, "non_existent_file_${System.currentTimeMillis()}.txt")
+
+        val syncItem = CloudSyncItemEntity(
+            id = 106L,
+            provider = "GOOGLE_DRIVE",
+            fileName = nonExistentFile.name,
+            filePath = nonExistentFile.absolutePath,
+            fileSize = 100L,
+            status = "PENDING",
+            lastSyncedMs = 0L,
+            isCore = false
+        )
+        fakeDao.insertCloudSyncItem(syncItem)
+
+        val worker = createWorker(runAttemptCount = 0)
+        val result = worker.doWork()
+
+        assertEquals(ListenableWorker.Result.failure(), result)
+
+        val itemsInDb = fakeDao.getCloudSyncItems().first()
+        val itemInDb = itemsInDb.find { it.id == 106L }
+        assertEquals("FAILED", itemInDb?.status)
+    }
+
+    @Test
+    fun testRestCloudProviderAdapter_downloadFile_returnsNotSupported() = runBlocking {
+        val adapter = com.example.data.RestCloudProviderAdapter("GOOGLE_DRIVE", fakeApiService)
+        val destFile = File(context.cacheDir, "downloaded.txt")
+
+        val result = adapter.downloadFile("remote/path.txt", destFile)
+
+        assertEquals(com.example.data.CloudSyncResult.NotSupported, result)
+    }
 }
+

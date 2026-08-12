@@ -35,6 +35,87 @@ object PhysicalStorageManager {
         return dir
     }
 
+    fun getRestoredDir(context: Context): File {
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "Restored")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    fun getFileNameFromContentUri(context: Context, uri: Uri): String {
+        try {
+            val docName = DocumentFile.fromSingleUri(context, uri)?.name
+            if (!docName.isNullOrBlank()) {
+                return docName
+            }
+        } catch (_: Exception) {}
+
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1) {
+                        val name = cursor.getString(nameIndex)
+                        if (!name.isNullOrBlank()) {
+                            return name
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        val lastSegment = uri.lastPathSegment
+        if (!lastSegment.isNullOrBlank()) {
+            return lastSegment
+        }
+
+        return "file_${System.currentTimeMillis()}"
+    }
+
+    fun getFileSizeFromContentUri(context: Context, uri: Uri): Long {
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (sizeIndex != -1) {
+                        return cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        try {
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            val statSize = pfd?.statSize ?: -1L
+            pfd?.close()
+            if (statSize >= 0) return statSize
+        } catch (_: Exception) {}
+        return -1L
+    }
+
+    fun getFileNameFromVaultPathOrUri(context: Context, vaultFilePath: String, uri: Uri): String {
+        val vaultFile = File(vaultFilePath)
+        val name = vaultFile.name
+        if (name.startsWith("ENC_") && name.endsWith(".vvf")) {
+            val withoutPrefix = name.removePrefix("ENC_").removeSuffix(".vvf")
+            val extractedName = withoutPrefix.substringAfter("_")
+            if (extractedName.isNotBlank() && extractedName != withoutPrefix) {
+                return extractedName
+            }
+        }
+        return getFileNameFromContentUri(context, uri)
+    }
+
+    fun getFileNameFromTrashPathOrUri(context: Context, trashFileName: String, uri: Uri): String {
+        if (trashFileName.contains("_")) {
+            val extractedName = trashFileName.substringAfter("_")
+            if (extractedName.isNotBlank() && extractedName != trashFileName) {
+                return extractedName
+            }
+        }
+        return getFileNameFromContentUri(context, uri)
+    }
+
     /**
      * Physical File Rename via File API, MediaStore ContentResolver, or SAF DocumentFile fallback.
      */
@@ -120,8 +201,35 @@ object PhysicalStorageManager {
             return try {
                 val uri = Uri.parse(path)
                 val doc = DocumentFile.fromSingleUri(context, uri) ?: DocumentFile.fromTreeUri(context, uri)
-                val deleted = doc?.delete() ?: (context.contentResolver.delete(uri, null, null) > 0)
-                deleted
+                if (doc != null && !doc.exists()) {
+                    return true
+                }
+                val deleted = doc?.delete() ?: false
+                if (deleted) {
+                    return true
+                }
+                val rows = try {
+                    context.contentResolver.delete(uri, null, null)
+                } catch (e: SecurityException) {
+                    throw e
+                } catch (_: Exception) {
+                    0
+                }
+                if (rows > 0) {
+                    return true
+                }
+
+                val stillExists = try {
+                    if (doc != null) {
+                        doc.exists()
+                    } else {
+                        context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+
+                !stillExists
             } catch (e: SecurityException) {
                 Log.w(TAG, "SecurityException deleting content URI $path: ${e.message}")
                 false
@@ -247,25 +355,48 @@ object PhysicalStorageManager {
 
             return try {
                 val uri = Uri.parse(originalPath)
-                var written = false
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    trashFile.inputStream().use { input ->
-                        input.copyTo(output)
+                var writtenToOriginal = false
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        trashFile.inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                        writtenToOriginal = true
                     }
-                    written = true
-                } ?: false
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not write to original content URI $originalPath: ${e.message}")
+                    writtenToOriginal = false
+                }
 
-                if (written) {
+                if (writtenToOriginal) {
                     if (trashFile.delete()) {
                         notifyMediaStoreFileChanged(context, "", originalPath)
-                        Result.success(originalPath)
+                        return Result.success(originalPath)
                     } else {
                         Log.w(TAG, "Restored content URI $originalPath but failed to delete trash file $trashPath")
-                        Result.success(originalPath)
+                        return Result.success(originalPath)
                     }
-                } else {
-                    Result.failure(java.io.IOException("Failed to open output stream for content URI: $originalPath"))
                 }
+
+                // Original URI is deleted or unwritable. Restore to app-managed Restored directory.
+                val restoredDir = getRestoredDir(context)
+                val docName = getFileNameFromTrashPathOrUri(context, trashFile.name, uri)
+                val restoredFile = File(restoredDir, docName)
+
+                trashFile.copyTo(restoredFile, overwrite = true)
+
+                if (!restoredFile.exists() || restoredFile.length() == 0L) {
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(java.io.IOException("Failed to write restored file from trash to ${restoredFile.absolutePath}"))
+                }
+
+                if (!trashFile.delete() && trashFile.exists()) {
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(IllegalStateException("Failed to delete trash file after restoration."))
+                }
+
+                notifyMediaStoreFileChanged(context, "", restoredFile.absolutePath)
+                Result.success(restoredFile.absolutePath)
             } catch (e: Exception) {
                 Log.e(TAG, "Error restoring trash file $trashPath to content URI $originalPath: ${e.message}", e)
                 Result.failure(e)
@@ -331,23 +462,48 @@ object PhysicalStorageManager {
                 val decryptedBytes = decryptAction(encryptedBytes)
 
                 val uri = Uri.parse(originalPath)
-                var written = false
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    output.write(decryptedBytes)
-                    written = true
-                } ?: false
+                var writtenToOriginal = false
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(decryptedBytes)
+                        writtenToOriginal = true
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not write to original content URI $originalPath: ${e.message}")
+                    writtenToOriginal = false
+                }
 
-                if (!written) {
-                    return Result.failure(java.io.IOException("Failed to open output stream for content URI: $originalPath"))
+                if (writtenToOriginal) {
+                    val deletedVault = vaultFile.delete()
+                    if (!deletedVault && vaultFile.exists()) {
+                        Log.w(TAG, "Restored content URI $originalPath but failed to delete vault file $vaultFilePath")
+                    }
+                    notifyMediaStoreFileChanged(context, "", originalPath)
+                    return Result.success(originalPath)
+                }
+
+                // Original URI deleted/unwritable. Restore to app-managed Restored directory.
+                val restoredDir = getRestoredDir(context)
+                val docName = getFileNameFromVaultPathOrUri(context, vaultFilePath, uri)
+                val restoredFile = File(restoredDir, docName)
+
+                FileOutputStream(restoredFile).use { fos ->
+                    fos.write(decryptedBytes)
+                }
+
+                if (!restoredFile.exists() || restoredFile.length() == 0L) {
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(java.io.IOException("Failed to write restored file at ${restoredFile.absolutePath}"))
                 }
 
                 val deletedVault = vaultFile.delete()
                 if (!deletedVault && vaultFile.exists()) {
-                    Log.w(TAG, "Restored content URI $originalPath but failed to delete vault file $vaultFilePath")
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(IllegalStateException("Failed to delete encrypted vault source file."))
                 }
 
-                notifyMediaStoreFileChanged(context, "", originalPath)
-                Result.success(originalPath)
+                notifyMediaStoreFileChanged(context, "", restoredFile.absolutePath)
+                Result.success(restoredFile.absolutePath)
             } catch (e: javax.crypto.AEADBadTagException) {
                 Log.e(TAG, "AEADBadTagException in decryptAndRestore: Incorrect PIN or tampered vault data", e)
                 val msg = "Decryption failed: Incorrect PIN or tampered vault data."
@@ -434,31 +590,65 @@ object PhysicalStorageManager {
                 val uri = Uri.parse(originalPath)
                 val cipher = keystoreVaultManager.getDecryptionCipher(iv)
 
-                var written = false
+                var writtenToOriginal = false
+                try {
+                    java.io.FileInputStream(vaultFile).use { fis ->
+                        val cipherInputStream = javax.crypto.CipherInputStream(fis, cipher)
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            val buffer = ByteArray(65536)
+                            var bytesRead: Int
+                            while (cipherInputStream.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                            }
+                            writtenToOriginal = true
+                        }
+                        cipherInputStream.close()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not write to original content URI $originalPath: ${e.message}")
+                    writtenToOriginal = false
+                }
+
+                if (writtenToOriginal) {
+                    val deletedVault = vaultFile.delete()
+                    if (!deletedVault && vaultFile.exists()) {
+                        Log.w(TAG, "Restored content URI $originalPath but failed to delete vault file $vaultFilePath")
+                    }
+                    notifyMediaStoreFileChanged(context, "", originalPath)
+                    return Result.success(originalPath)
+                }
+
+                // Original URI deleted/unwritable. Restore to app-managed Restored directory.
+                val restoredDir = getRestoredDir(context)
+                val docName = getFileNameFromVaultPathOrUri(context, vaultFilePath, uri)
+                val restoredFile = File(restoredDir, docName)
+
+                val cipher2 = keystoreVaultManager.getDecryptionCipher(iv)
                 java.io.FileInputStream(vaultFile).use { fis ->
-                    val cipherInputStream = javax.crypto.CipherInputStream(fis, cipher)
-                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                    val cipherInputStream = javax.crypto.CipherInputStream(fis, cipher2)
+                    FileOutputStream(restoredFile).use { fos ->
                         val buffer = ByteArray(65536)
                         var bytesRead: Int
                         while (cipherInputStream.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
+                            fos.write(buffer, 0, bytesRead)
                         }
-                        written = true
                     }
                     cipherInputStream.close()
                 }
 
-                if (!written) {
-                    return Result.failure(java.io.IOException("Failed to open output stream for content URI: $originalPath"))
+                if (!restoredFile.exists() || restoredFile.length() == 0L) {
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(java.io.IOException("Failed to write restored file at ${restoredFile.absolutePath}"))
                 }
 
                 val deletedVault = vaultFile.delete()
                 if (!deletedVault && vaultFile.exists()) {
-                    Log.w(TAG, "Restored content URI $originalPath but failed to delete vault file $vaultFilePath")
+                    try { if (restoredFile.exists()) restoredFile.delete() } catch (_: Exception) {}
+                    return Result.failure(IllegalStateException("Failed to delete encrypted vault source file."))
                 }
 
-                notifyMediaStoreFileChanged(context, "", originalPath)
-                Result.success(originalPath)
+                notifyMediaStoreFileChanged(context, "", restoredFile.absolutePath)
+                Result.success(restoredFile.absolutePath)
             } catch (e: javax.crypto.AEADBadTagException) {
                 Log.e(TAG, "AEADBadTagException in decryptAndRestore Stream: Incorrect PIN or tampered vault data", e)
                 val msg = "Decryption failed: Incorrect PIN or tampered vault data."
@@ -542,11 +732,7 @@ object PhysicalStorageManager {
                     return Result.failure(IllegalArgumentException("File size (${fileBytes.size / (1024 * 1024)}MB) exceeds the maximum secure vault limit of 50MB."))
                 }
 
-                val docName = try {
-                    DocumentFile.fromSingleUri(context, uri)?.name ?: "content_${System.currentTimeMillis()}"
-                } catch (_: Exception) {
-                    "content_${System.currentTimeMillis()}"
-                }
+                val docName = getFileNameFromContentUri(context, uri)
 
                 val (encryptedBytes, iv) = encryptAction(fileBytes)
                 val vaultDir = getVaultDir(context)
@@ -580,6 +766,7 @@ object PhysicalStorageManager {
                         )
                     )
                 } else {
+                    try { if (vaultFile.exists()) vaultFile.delete() } catch (_: Exception) {}
                     Result.failure(java.io.IOException("Failed to delete original content URI after vault encryption: $srcPath"))
                 }
             } catch (e: Exception) {
@@ -653,11 +840,7 @@ object PhysicalStorageManager {
         if (srcPath.startsWith("content://")) {
             return try {
                 val uri = Uri.parse(srcPath)
-                val docName = try {
-                    DocumentFile.fromSingleUri(context, uri)?.name ?: "content_${System.currentTimeMillis()}"
-                } catch (_: Exception) {
-                    "content_${System.currentTimeMillis()}"
-                }
+                val docName = getFileNameFromContentUri(context, uri)
 
                 val vaultDir = getVaultDir(context)
                 val encFileName = "ENC_${System.currentTimeMillis()}_${docName}.vvf"
@@ -706,6 +889,7 @@ object PhysicalStorageManager {
                         )
                     )
                 } else {
+                    try { if (vaultFile.exists()) vaultFile.delete() } catch (_: Exception) {}
                     Result.failure(java.io.IOException("Failed to delete original content URI after vault encryption: $srcPath"))
                 }
             } catch (e: Exception) {
@@ -855,6 +1039,7 @@ object PhysicalStorageManager {
     }
 
     private fun notifyMediaStoreFileChanged(context: Context, oldPath: String, newPath: String) {
+        if (newPath.startsWith("content://")) return
         try {
             val file = File(newPath)
             if (file.exists()) {

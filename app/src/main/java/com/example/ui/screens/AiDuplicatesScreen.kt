@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+
 package com.example.ui.screens
 import com.example.R
 import androidx.compose.ui.res.stringResource
@@ -68,6 +70,10 @@ import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SkyCyan
 import com.example.ui.theme.SoftGold
 import java.util.Locale
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @Composable
 fun AiDuplicatesScreen(
     viewModel: MainViewModel,
@@ -316,13 +322,13 @@ fun DuplicateCleanerSection(
                             Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.threshold), tint = BhagwaOrange)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Visual Similarity Threshold",
+                                text = stringResource(R.string.visual_similarity_threshold),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
                             )
                         }
                         Text(
-                            text = "${similarityThreshold.toInt()}% Match",
+                            text = stringResource(R.string.match_percent, similarityThreshold.toInt()),
                             fontWeight = FontWeight.Bold,
                             color = BhagwaOrange,
                             fontSize = 14.sp
@@ -330,7 +336,7 @@ fun DuplicateCleanerSection(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Adjust similarity slider (70% loose -> 95% near-exact visual match)",
+                        text = stringResource(R.string.adjust_similarity_slider),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -439,7 +445,7 @@ fun DuplicateCleanerSection(
         if (level3Duplicates.isEmpty()) {
             item {
                 Text(
-                    text = "No visual duplicates matching ${similarityThreshold.toInt()}% threshold.",
+                    text = stringResource(R.string.no_visual_duplicates_matching, similarityThreshold.toInt()),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

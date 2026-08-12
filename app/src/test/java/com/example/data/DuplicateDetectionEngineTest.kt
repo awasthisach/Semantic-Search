@@ -226,4 +226,51 @@ class DuplicateDetectionEngineTest {
         )
         assertTrue(distinctFlow.first().isEmpty())
     }
+
+    @Test
+    fun testThresholdSensitivityForVisualAndSemanticDuplicates() = runBlocking {
+        // Image 1 hash: "0000000000000000" (all zeros)
+        // Image 2 hash: "00000000000003FF" (10 bits set -> hamming distance 10)
+        val img1 = createImageFile(1001L, "img1.jpg", "0000000000000000")
+        val img2 = createImageFile(1002L, "img2.jpg", "00000000000003FF")
+        val activeFiles = flowOf(listOf(img1, img2))
+
+        // At 95% threshold, max distance is 3 bits -> Hamming distance 10 should NOT be duplicate
+        val highThresholdVisuals = duplicateDetectionEngine.getVisualDuplicates(activeFiles, flowOf(95.0f)).first()
+        assertTrue("At 95% threshold, 10-bit distance images must not be flagged as duplicates", highThresholdVisuals.isEmpty())
+
+        // At 70% threshold, max distance is 19 bits -> Hamming distance 10 SHOULD be duplicate
+        val lowThresholdVisuals = duplicateDetectionEngine.getVisualDuplicates(activeFiles, flowOf(70.0f)).first()
+        assertEquals("At 70% threshold, 10-bit distance images must be flagged as duplicates", 1, lowThresholdVisuals.size)
+
+        // Semantic items with cosine similarity ~0.80
+        // e.g. vec1 = [1, 0], vec2 = [0.8, 0.6] -> dot = 0.8 / (1 * 1) = 0.8
+        val doc1 = FileItemEntity(
+            id = 1003L,
+            name = "doc1.txt",
+            path = "/doc1.txt",
+            category = FileCategory.DOCUMENTS.name,
+            sizeBytes = 100L,
+            semanticEmbeddingString = "1.0,0.0",
+            semanticIndexed = true
+        )
+        val doc2 = FileItemEntity(
+            id = 1004L,
+            name = "doc2.txt",
+            path = "/doc2.txt",
+            category = FileCategory.DOCUMENTS.name,
+            sizeBytes = 100L,
+            semanticEmbeddingString = "0.8,0.6",
+            semanticIndexed = true
+        )
+        val docFiles = flowOf(listOf(doc1, doc2))
+
+        // At 95% threshold (0.95 required), 0.80 similarity should NOT be duplicate
+        val highThresholdSemantics = duplicateDetectionEngine.getSemanticDuplicates(docFiles, flowOf(95.0f)).first()
+        assertTrue("At 95% threshold, 0.80 similarity documents must not be flagged as duplicates", highThresholdSemantics.isEmpty())
+
+        // At 70% threshold (0.70 required), 0.80 similarity SHOULD be duplicate
+        val lowThresholdSemantics = duplicateDetectionEngine.getSemanticDuplicates(docFiles, flowOf(70.0f)).first()
+        assertEquals("At 70% threshold, 0.80 similarity documents must be flagged as duplicates", 1, lowThresholdSemantics.size)
+    }
 }

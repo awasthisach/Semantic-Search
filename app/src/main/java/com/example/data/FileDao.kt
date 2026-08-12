@@ -70,17 +70,96 @@ interface FileDao {
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND md5Hash IS NOT NULL AND md5Hash != '' AND md5Hash IN (SELECT md5Hash FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND md5Hash IS NOT NULL AND md5Hash != '' GROUP BY md5Hash HAVING COUNT(*) > 1) ORDER BY md5Hash ASC, dateModifiedMs DESC")
     fun getDuplicateFilesByHash(): Flow<List<FileItemEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFile(file: FileItemEntity): Long
+    @Query("SELECT * FROM files WHERE path = :path LIMIT 1")
+    suspend fun getFileByPath(path: String): FileItemEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFiles(files: List<FileItemEntity>)
+    suspend fun insertFileDirect(file: FileItemEntity): Long
+
+    @androidx.room.Transaction
+    suspend fun upsertFilesPreservingMetadata(files: List<FileItemEntity>) {
+        for (file in files) {
+            val existing = getFileByPath(file.path)
+            if (existing == null) {
+                insertFileDirect(file)
+            } else {
+                val updated = existing.copy(
+                    name = file.name,
+                    category = file.category,
+                    sizeBytes = file.sizeBytes,
+                    dateModifiedMs = file.dateModifiedMs,
+                    md5Hash = if (file.md5Hash.isNotBlank()) file.md5Hash else existing.md5Hash,
+                    ocrText = if (file.ocrText.isNotBlank()) file.ocrText else existing.ocrText,
+                    tags = if (file.tags.isNotBlank()) file.tags else existing.tags,
+                    originalPath = if (file.originalPath.isNotBlank()) file.originalPath else existing.originalPath,
+                    visualSimilarityHash = if (file.visualSimilarityHash.isNotBlank()) file.visualSimilarityHash else existing.visualSimilarityHash,
+                    semanticEmbeddingVersion = if (file.semanticEmbeddingVersion > 0) file.semanticEmbeddingVersion else existing.semanticEmbeddingVersion,
+                    semanticIndexed = file.semanticIndexed || existing.semanticIndexed,
+                    semanticEmbeddingString = if (file.semanticEmbeddingString.isNotBlank()) file.semanticEmbeddingString else existing.semanticEmbeddingString,
+                    isVault = existing.isVault,
+                    isRecycleBin = existing.isRecycleBin,
+                    deletedTimestampMs = existing.deletedTimestampMs
+                )
+                updateFile(updated)
+            }
+        }
+    }
+
+    @androidx.room.Transaction
+    suspend fun insertFile(file: FileItemEntity): Long {
+        val existing = getFileByPath(file.path)
+        return if (existing == null) {
+            insertFileDirect(file)
+        } else {
+            val updated = existing.copy(
+                name = file.name,
+                category = file.category,
+                sizeBytes = file.sizeBytes,
+                dateModifiedMs = file.dateModifiedMs,
+                md5Hash = if (file.md5Hash.isNotBlank()) file.md5Hash else existing.md5Hash,
+                ocrText = if (file.ocrText.isNotBlank()) file.ocrText else existing.ocrText,
+                tags = if (file.tags.isNotBlank()) file.tags else existing.tags,
+                originalPath = if (file.originalPath.isNotBlank()) file.originalPath else existing.originalPath,
+                visualSimilarityHash = if (file.visualSimilarityHash.isNotBlank()) file.visualSimilarityHash else existing.visualSimilarityHash,
+                semanticEmbeddingVersion = if (file.semanticEmbeddingVersion > 0) file.semanticEmbeddingVersion else existing.semanticEmbeddingVersion,
+                semanticIndexed = file.semanticIndexed || existing.semanticIndexed,
+                semanticEmbeddingString = if (file.semanticEmbeddingString.isNotBlank()) file.semanticEmbeddingString else existing.semanticEmbeddingString,
+                isVault = existing.isVault,
+                isRecycleBin = existing.isRecycleBin,
+                deletedTimestampMs = existing.deletedTimestampMs
+            )
+            updateFile(updated)
+            existing.id
+        }
+    }
+
+    @androidx.room.Transaction
+    suspend fun insertFiles(files: List<FileItemEntity>) {
+        upsertFilesPreservingMetadata(files)
+    }
 
     @Update
     suspend fun updateFile(file: FileItemEntity)
 
     @Query("DELETE FROM files WHERE id = :id")
     suspend fun deleteFileById(id: Long)
+
+    @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0")
+    suspend fun getAllOrdinaryFilesDirect(): List<FileItemEntity>
+
+    @Query("DELETE FROM files WHERE id IN (:ids)")
+    suspend fun deleteFilesByIds(ids: List<Long>)
+
+    @androidx.room.Transaction
+    suspend fun reconcileStaleRecords(discoveredPaths: Set<String>) {
+        val ordinaryFiles = getAllOrdinaryFilesDirect()
+        val staleIds = ordinaryFiles.filter { it.path !in discoveredPaths }.map { it.id }
+        if (staleIds.isNotEmpty()) {
+            staleIds.chunked(900).forEach { chunk ->
+                deleteFilesByIds(chunk)
+            }
+        }
+    }
 
     @Query("DELETE FROM files WHERE isRecycleBin = 1")
     suspend fun emptyRecycleBin()
@@ -104,6 +183,9 @@ interface FileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCloudSyncItem(item: CloudSyncItemEntity): Long
+
+    @Query("DELETE FROM cloud_sync WHERE id = :id")
+    suspend fun deleteCloudSyncItem(id: Long)
 
     // Plugins DAO
     @Query("SELECT * FROM plugins ORDER BY isCore DESC, name ASC")

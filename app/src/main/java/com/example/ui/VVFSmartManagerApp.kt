@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+
 package com.example.ui
 import com.example.R
 import androidx.compose.ui.res.stringResource

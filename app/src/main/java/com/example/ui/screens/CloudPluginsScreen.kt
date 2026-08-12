@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+
 package com.example.ui.screens
 import com.example.R
 import androidx.compose.ui.res.stringResource
@@ -57,6 +59,10 @@ import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SkyCyan
 import com.example.ui.theme.SoftGold
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @Composable
 fun CloudPluginsScreen(
     viewModel: MainViewModel,
@@ -189,7 +195,9 @@ fun CloudSyncSection(
         }
         items(syncItems, key = { it.id }) { item ->
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("sync_item_${item.id}"),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
@@ -200,7 +208,7 @@ fun CloudSyncSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(text = item.fileName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(
                             text = "Provider: ${item.provider} • ${formatFileSize(item.fileSize)}",
@@ -208,25 +216,56 @@ fun CloudSyncSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = when (item.status) {
-                            "SYNCED" -> EmeraldGreen.copy(alpha = 0.2f)
-                            "PENDING", "QUEUED" -> SoftGold.copy(alpha = 0.2f)
-                            else -> MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
-                        }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = item.status,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
+                        val statusLabel = when (item.status) {
+                            "PENDING" -> "Waiting"
+                            "QUEUED" -> "Queued"
+                            "UPLOADING" -> "Uploading"
+                            "SYNCED" -> "Synced"
+                            "FAILED" -> "Failed"
+                            "NOT_SUPPORTED" -> "Not Supported"
+                            else -> item.status
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
                             color = when (item.status) {
-                                "SYNCED" -> EmeraldGreen
-                                "PENDING", "QUEUED" -> SoftGold
-                                else -> MaterialTheme.colorScheme.error
-                            },
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                                "SYNCED" -> EmeraldGreen.copy(alpha = 0.2f)
+                                "PENDING", "QUEUED" -> SoftGold.copy(alpha = 0.2f)
+                                "UPLOADING" -> SkyCyan.copy(alpha = 0.2f)
+                                else -> MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                            }
+                        ) {
+                            Text(
+                                text = statusLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when (item.status) {
+                                    "SYNCED" -> EmeraldGreen
+                                    "PENDING", "QUEUED" -> SoftGold
+                                    "UPLOADING" -> SkyCyan
+                                    else -> MaterialTheme.colorScheme.error
+                                },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        if (item.status == "FAILED") {
+                            TextButton(
+                                onClick = { viewModel.retryCloudSyncItem(item.id) },
+                                modifier = Modifier.testTag("retry_sync_${item.id}")
+                            ) {
+                                Text("Retry", fontSize = 12.sp, color = BhagwaOrange, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (item.status == "PENDING" || item.status == "QUEUED") {
+                            TextButton(
+                                onClick = { viewModel.cancelCloudSyncItem(item.id) },
+                                modifier = Modifier.testTag("cancel_sync_${item.id}")
+                            ) {
+                                Text("Cancel", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
             }

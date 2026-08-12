@@ -295,7 +295,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun syncCloudProvider(provider: String) {
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.addSyncItem(provider, "Sync_Batch_${System.currentTimeMillis() / 1000}.zip", 12_500_000L)
-            repository.enqueueCloudSyncWork()
+        }
+    }
+
+    fun retryCloudSyncItem(id: Long) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.retryCloudSyncItem(id)
+        }
+    }
+
+    fun cancelCloudSyncItem(id: Long) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.cancelCloudSyncItem(id)
         }
     }
 

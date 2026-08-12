@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+
 package com.example.ui.screens
 import com.example.R
 import androidx.compose.ui.res.stringResource
@@ -78,6 +80,10 @@ import java.util.Locale
 import androidx.compose.material.icons.filled.FolderOpen
 import com.example.ui.components.FilePickerSheet
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @Composable
 fun DashboardScreen(
     viewModel: MainViewModel,

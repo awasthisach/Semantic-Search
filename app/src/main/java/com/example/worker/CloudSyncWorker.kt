@@ -8,12 +8,11 @@ import com.example.data.AppDatabase
 import com.example.data.CloudSyncItemEntity
 import com.example.data.CloudApiService
 import com.example.data.FileDao
+import com.example.data.CloudProviderAdapter
+import com.example.data.CloudSyncResult
+import com.example.data.RestCloudProviderAdapter
 import kotlinx.coroutines.flow.first
 import java.io.File
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
@@ -21,100 +20,118 @@ class CloudSyncWorker @JvmOverloads constructor(
     appContext: Context,
     workerParams: WorkerParameters,
     private val daoOverride: FileDao? = null,
-    private val apiServiceOverride: CloudApiService? = null
+    private val apiServiceOverride: CloudApiService? = null,
+    private val providerAdapterOverride: CloudProviderAdapter? = null
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        Log.i(TAG, "Starting background CloudSyncWorker with real API contract...")
+        Log.i(TAG, "Starting background CloudSyncWorker with provider adapter contract...")
         return try {
             val dao = daoOverride ?: AppDatabase.getDatabase(applicationContext).fileDao()
 
             val syncItems = dao.getCloudSyncItems().first()
-            val pendingOrQueued = syncItems.filter { it.status == "PENDING" || it.status == "QUEUED" || it.status == "FAILED" || it.status == "UPLOADING" }
-
-            val apiService = apiServiceOverride ?: run {
-                val baseUrl = try {
-                    val configUrl = com.example.BuildConfig.API_BASE_URL
-                    if (!configUrl.isNullOrEmpty() && configUrl.startsWith("http")) {
-                        if (configUrl.endsWith("/")) configUrl else "$configUrl/"
-                    } else {
-                        "https://api.example.com/"
+            val plugins = dao.getAllPlugins().first()
+            val disabledProviders = plugins
+                .filter { !it.isEnabled }
+                .mapNotNull { plugin ->
+                    when (plugin.pluginId) {
+                        "gdrive_sync" -> "GOOGLE_DRIVE"
+                        "onedrive_sync" -> "ONEDRIVE"
+                        "dropbox_sync" -> "DROPBOX"
+                        else -> null
                     }
+                }.toSet()
+
+            val pendingOrQueued = syncItems
+                .filter { it.status == "PENDING" || it.status == "QUEUED" || it.status == "FAILED" || it.status == "UPLOADING" }
+                .filter { it.provider !in disabledProviders }
+
+            if (pendingOrQueued.isEmpty()) {
+                Log.i(TAG, "No pending cloud sync items for enabled plugins.")
+                return Result.success()
+            }
+
+            val apiService = if (providerAdapterOverride == null && apiServiceOverride == null) {
+                val configUrl = try {
+                    com.example.BuildConfig.API_BASE_URL
                 } catch (e: Throwable) {
-                    "https://api.example.com/"
+                    null
                 }
 
+                if (isPlaceholderUrl(configUrl)) {
+                    Log.w(TAG, "Cloud API base URL is missing or set to a placeholder ($configUrl). Aborting cloud sync.")
+                    for (item in pendingOrQueued) {
+                        dao.insertCloudSyncItem(item.copy(status = "FAILED", lastSyncedMs = System.currentTimeMillis()))
+                    }
+                    return Result.failure()
+                }
+
+                val formattedUrl = if (configUrl!!.endsWith("/")) configUrl else "$configUrl/"
                 val retrofit = Retrofit.Builder()
-                    .baseUrl(baseUrl)
+                    .baseUrl(formattedUrl)
                     .addConverterFactory(MoshiConverterFactory.create())
                     .build()
                 retrofit.create(CloudApiService::class.java)
+            } else {
+                apiServiceOverride
             }
 
             var syncedCount = 0
             var failedCount = 0
+            var retryableFailedCount = 0
 
             for (item in pendingOrQueued) {
-                // Update state to UPLOADING to reflect real work progress
+                // Update state to UPLOADING to reflect progress
                 val uploadingItem = item.copy(status = "UPLOADING")
                 dao.insertCloudSyncItem(uploadingItem)
 
-                try {
-                    val file = File(item.filePath)
-                    if (!file.exists()) {
-                        dao.insertCloudSyncItem(item.copy(status = "FAILED", lastSyncedMs = System.currentTimeMillis()))
-                        failedCount++
-                        continue
-                    }
-                    val mediaType = "application/octet-stream".toMediaTypeOrNull()
-                    val requestFile = file.asRequestBody(mediaType)
-                    val multipartBody = MultipartBody.Part.createFormData("file", item.fileName, requestFile)
-                    
-                    val providerMediaType = "text/plain".toMediaTypeOrNull()
-                    val providerBody = item.provider.toRequestBody(providerMediaType)
+                val file = File(item.filePath)
+                val adapter = providerAdapterOverride
+                    ?: RestCloudProviderAdapter(item.provider, apiService!!)
 
-                    val response = apiService.uploadFile(multipartBody, providerBody)
-                    if (response.isSuccessful) {
+                val syncResult = adapter.uploadFile(file, item.fileName)
+                when (syncResult) {
+                    is CloudSyncResult.Success -> {
                         val updatedItem = item.copy(
                             status = "SYNCED",
                             lastSyncedMs = System.currentTimeMillis()
                         )
                         dao.insertCloudSyncItem(updatedItem)
                         syncedCount++
-                    } else {
+                    }
+                    is CloudSyncResult.Error -> {
                         val updatedItem = item.copy(
                             status = "FAILED",
                             lastSyncedMs = System.currentTimeMillis()
                         )
                         dao.insertCloudSyncItem(updatedItem)
                         failedCount++
+                        if (syncResult.isRetryable) {
+                            retryableFailedCount++
+                        }
                     }
-                } catch (e: Exception) {
-                    val isUnknownHost = e is java.net.UnknownHostException || 
-                            e is java.net.ConnectException || 
-                            e.message?.contains("Unable to resolve host") == true
-                    if (isUnknownHost) {
-                        Log.w(TAG, "Cloud API host unreachable for ${item.fileName}: ${e.message}. Deferring sync.")
-                    } else {
-                        Log.e(TAG, "Network upload failed in CloudSyncWorker for ${item.fileName}: ${e.message}", e)
+                    is CloudSyncResult.NotSupported -> {
+                        val updatedItem = item.copy(
+                            status = "NOT_SUPPORTED",
+                            lastSyncedMs = System.currentTimeMillis()
+                        )
+                        dao.insertCloudSyncItem(updatedItem)
+                        failedCount++
                     }
-                    val updatedItem = item.copy(
-                        status = "FAILED",
-                        lastSyncedMs = System.currentTimeMillis()
-                    )
-                    dao.insertCloudSyncItem(updatedItem)
-                    failedCount++
                 }
             }
 
-            Log.i(TAG, "CloudSyncWorker finished. Synced: $syncedCount, Failed: $failedCount")
-            if (failedCount > 0) {
+            Log.i(TAG, "CloudSyncWorker finished. Synced: $syncedCount, Failed: $failedCount (Retryable: $retryableFailedCount)")
+            if (retryableFailedCount > 0) {
                 if (runAttemptCount >= 3) {
                     Log.e(TAG, "CloudSyncWorker failed after $runAttemptCount attempts. Abandoning retry.")
                     Result.failure()
                 } else {
                     Result.retry()
                 }
+            } else if (failedCount > 0) {
+                // Permanent failure (e.g. HTTP 4xx or missing file) - do not retry
+                Result.failure()
             } else {
                 Result.success()
             }
@@ -122,6 +139,15 @@ class CloudSyncWorker @JvmOverloads constructor(
             Log.e(TAG, "Fatal error in CloudSyncWorker: ${e.message}", e)
             Result.failure()
         }
+    }
+
+    private fun isPlaceholderUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        val lower = url.lowercase()
+        return lower.contains("example.com") ||
+                lower.contains("localhost") ||
+                lower.contains("127.0.0.1") ||
+                !lower.startsWith("http")
     }
 
     companion object {

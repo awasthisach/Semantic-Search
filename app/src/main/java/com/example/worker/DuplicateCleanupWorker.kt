@@ -10,6 +10,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
 import com.example.data.FileItemEntity
+import com.example.storage.PhysicalStorageManager
 import com.example.storage.StorageScanner
 import kotlinx.coroutines.flow.first
 
@@ -48,14 +49,23 @@ class DuplicateCleanupWorker(
                 val sorted = duplicateList.sortedBy { it.dateModifiedMs }
                 val redundant = sorted.drop(1)
                 for (file in redundant) {
-                    duplicatesFound++
-                    bytesCleaned += file.sizeBytes
-                    filesToMoveToRecycleBin.add(
-                        file.copy(
-                            isRecycleBin = true,
-                            deletedTimestampMs = System.currentTimeMillis()
+                    val trashResult = PhysicalStorageManager.moveToTrash(applicationContext, file.path)
+                    if (trashResult.isSuccess) {
+                        val newPath = trashResult.getOrThrow()
+                        val originalPathToKeep = if (file.originalPath.isNotBlank()) file.originalPath else file.path
+                        duplicatesFound++
+                        bytesCleaned += file.sizeBytes
+                        filesToMoveToRecycleBin.add(
+                            file.copy(
+                                path = newPath,
+                                originalPath = originalPathToKeep,
+                                isRecycleBin = true,
+                                deletedTimestampMs = System.currentTimeMillis()
+                            )
                         )
-                    )
+                    } else {
+                        Log.w(TAG, "Physical move to trash failed for duplicate file ${file.path}: ${trashResult.exceptionOrNull()?.message}")
+                    }
                 }
             }
 

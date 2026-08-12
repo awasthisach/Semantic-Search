@@ -50,6 +50,15 @@ class DuplicateManagerTest {
         override suspend fun insertFile(file: FileItemEntity): Long = 0L
         override suspend fun insertFiles(files: List<FileItemEntity>) {}
         override suspend fun updateFile(file: FileItemEntity) {}
+        override suspend fun getFileByPath(path: String): FileItemEntity? = filesMap.values.find { it.path == path }
+        override suspend fun insertFileDirect(file: FileItemEntity): Long {
+            filesMap[file.id] = file
+            return file.id
+        }
+        override suspend fun getAllOrdinaryFilesDirect(): List<FileItemEntity> = filesMap.values.filter { !it.isVault && !it.isRecycleBin }
+        override suspend fun deleteFilesByIds(ids: List<Long>) {
+            ids.forEach { filesMap.remove(it) }
+        }
         override suspend fun deleteFileById(id: Long) {}
         override suspend fun emptyRecycleBin() {}
         override suspend fun getVaultFileByName(name: String): FileItemEntity? = null
@@ -58,6 +67,7 @@ class DuplicateManagerTest {
         override suspend fun deleteVaultItemById(id: Long) {}
         override fun getCloudSyncItems(): Flow<List<CloudSyncItemEntity>> = flowOf(emptyList())
         override suspend fun insertCloudSyncItem(item: CloudSyncItemEntity): Long = 0L
+        override suspend fun deleteCloudSyncItem(id: Long) {}
         override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(emptyList())
         override suspend fun setPluginEnabled(id: String, enabled: Boolean) {}
         override suspend fun insertPlugins(plugins: List<PluginEntity>) {}

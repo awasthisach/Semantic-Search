@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+
 package com.example.ui.screens
 import com.example.R
 import kotlinx.coroutines.launch
@@ -86,6 +88,10 @@ import com.example.ui.components.FilePickerSheet
 import com.example.utils.formatFileSize
 import com.example.utils.formatDate
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @Composable
 fun FileManagerScreen(
     viewModel: MainViewModel,

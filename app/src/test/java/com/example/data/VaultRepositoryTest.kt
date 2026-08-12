@@ -64,11 +64,16 @@ class VaultRepositoryTest {
         override fun getDuplicateFilesByHash(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override suspend fun insertFile(file: FileItemEntity): Long = 0L
         override suspend fun insertFiles(files: List<FileItemEntity>) {}
+        override suspend fun getFileByPath(path: String): FileItemEntity? = null
+        override suspend fun insertFileDirect(file: FileItemEntity): Long = 0L
+        override suspend fun getAllOrdinaryFilesDirect(): List<FileItemEntity> = emptyList()
+        override suspend fun deleteFilesByIds(ids: List<Long>) {}
         override suspend fun deleteFileById(id: Long) {}
         override suspend fun emptyRecycleBin() {}
         override fun getAllVaultItems(): Flow<List<VaultItemEntity>> = flowOf(emptyList())
         override fun getCloudSyncItems(): Flow<List<CloudSyncItemEntity>> = flowOf(emptyList())
         override suspend fun insertCloudSyncItem(item: CloudSyncItemEntity): Long = 0L
+        override suspend fun deleteCloudSyncItem(id: Long) {}
         override suspend fun setPluginEnabled(id: String, enabled: Boolean) {}
         override suspend fun insertPlugins(plugins: List<PluginEntity>) {}
         override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(emptyList())

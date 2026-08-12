@@ -22,18 +22,25 @@ class BackgroundIndexWorker(
         return try {
             val scanner = StorageScanner(applicationContext)
             val db = AppDatabase.getDatabase(applicationContext)
+            val discoveredPaths = mutableSetOf<String>()
             var totalDiscovered = 0
             scanner.scanDeviceStorageFlow().collect { batch ->
                 if (batch.isNotEmpty()) {
-                    db.fileDao().insertFiles(batch)
+                    db.fileDao().upsertFilesPreservingMetadata(batch)
                     totalDiscovered += batch.size
+                    batch.forEach { item -> discoveredPaths.add(item.path) }
                 }
             }
 
-            if (totalDiscovered > 0) {
-                Log.i(TAG, "Successfully indexed and synced $totalDiscovered real storage files into database.")
+            if (!isStopped) {
+                db.fileDao().reconcileStaleRecords(discoveredPaths)
+                if (totalDiscovered > 0) {
+                    Log.i(TAG, "Successfully indexed and synced $totalDiscovered real storage files into database.")
+                } else {
+                    Log.w(TAG, "Background scan finished with 0 files discovered.")
+                }
             } else {
-                Log.w(TAG, "Background scan finished with 0 files discovered.")
+                Log.w(TAG, "Worker was stopped before stale record reconciliation could run.")
             }
 
             androidx.work.ListenableWorker.Result.success()
