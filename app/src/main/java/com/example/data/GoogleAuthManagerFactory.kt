@@ -1,10 +1,15 @@
 package com.example.data
 
 import android.content.Context
-import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
+/**
+ * Creates the singleton Google OAuth session manager using encrypted storage.
+ *
+ * Authentication state must fail closed: falling back to ordinary SharedPreferences
+ * would persist OAuth credentials in plaintext and is not acceptable for production.
+ */
 object GoogleAuthManagerFactory {
 
     @Volatile
@@ -13,22 +18,19 @@ object GoogleAuthManagerFactory {
     fun getInstance(context: Context): GoogleAuthManager {
         return INSTANCE ?: synchronized(this) {
             INSTANCE ?: run {
-                val securePrefs = try {
-                    val masterKey = MasterKey.Builder(context.applicationContext)
-                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                        .build()
+                val appContext = context.applicationContext
+                val masterKey = MasterKey.Builder(appContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
 
-                    EncryptedSharedPreferences.create(
-                        context.applicationContext,
-                        "secure_google_oauth_prefs",
-                        masterKey,
-                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                    )
-                } catch (e: Exception) {
-                    Log.e("GoogleAuthManagerFactory", "Failed to create EncryptedSharedPreferences, falling back to standard prefs", e)
-                    context.applicationContext.getSharedPreferences("secure_google_oauth_prefs_fallback", Context.MODE_PRIVATE)
-                }
+                val securePrefs = EncryptedSharedPreferences.create(
+                    appContext,
+                    "secure_google_oauth_prefs",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+
                 GoogleAuthManager(securePrefs).also { INSTANCE = it }
             }
         }
