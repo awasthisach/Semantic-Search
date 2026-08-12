@@ -185,7 +185,7 @@ class TFLiteSemanticEmbeddingProvider(
                 val buffer = fileChannel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, modelFile.length())
                 loadModelFromBuffer(buffer)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w("TFLiteSemantic", "Failed to load TFLite model from file: ${e.message}")
             interpreter = null
             vocabMap = null
@@ -259,7 +259,7 @@ class TFLiteSemanticEmbeddingProvider(
                 vocabMap = null
                 false
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.i("TFLiteSemantic", "TFLite model or vocab asset not found in assets (optional feature): ${e.message}")
             interpreter = null
             vocabMap = null
@@ -276,7 +276,7 @@ class TFLiteSemanticEmbeddingProvider(
             interpreter = Interpreter(buffer, options)
             Log.i("TFLiteSemantic", "TFLite Model loaded successfully from buffer")
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w("TFLiteSemantic", "Failed to load TFLite model from buffer: ${e.message}")
             interpreter = null
             vocabMap = null

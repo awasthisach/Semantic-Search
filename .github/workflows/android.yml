@@ -57,7 +57,7 @@ jobs:
         if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
           echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
         else
-          echo "API_BASE_URL=${{ secrets.API_BASE_URL || 'https://api.vvfsmartmanager.example.com' }}" > .env
+          touch .env
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           fi
@@ -162,7 +162,7 @@ jobs:
           if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
             echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
           else
-            echo "API_BASE_URL=${{ secrets.API_BASE_URL || 'https://api.vvfsmartmanager.example.com' }}" > .env
+            touch .env
             if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
               echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
             fi

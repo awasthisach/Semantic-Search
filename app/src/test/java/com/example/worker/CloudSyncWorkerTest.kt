@@ -6,21 +6,17 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import com.example.data.CategoryStat
-import com.example.data.CloudApiService
 import com.example.data.CloudSyncItemEntity
 import com.example.data.FileDao
 import com.example.data.FileItemEntity
 import com.example.data.PluginEntity
 import com.example.data.VaultItemEntity
+import com.example.data.CloudProviderAdapter
+import com.example.data.CloudSyncResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody
-import okhttp3.ResponseBody
-import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -29,7 +25,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import retrofit2.Response
 import java.io.File
 import java.io.IOException
 
@@ -110,25 +105,25 @@ class FakeFileDao : FileDao {
     }
 }
 
-class FakeCloudApiService : CloudApiService {
+class FakeCloudProviderAdapter : CloudProviderAdapter {
+    override val providerId: String = "GOOGLE_DRIVE"
     var shouldFail: Boolean = false
-    var httpStatusCode: Int = 500
+    var isRetryable: Boolean = true
     var exceptionToThrow: Exception? = null
 
-    override suspend fun uploadFile(
-        file: MultipartBody.Part,
-        provider: RequestBody
-    ): Response<ResponseBody> {
+    override suspend fun uploadFile(file: File, remotePath: String): CloudSyncResult {
         exceptionToThrow?.let { throw it }
         if (shouldFail) {
-            return Response.error(
-                httpStatusCode,
-                "{\"error\":\"Server error\"}".toResponseBody("application/json".toMediaTypeOrNull())
+            return CloudSyncResult.Error(
+                message = "Upload failed",
+                isRetryable = isRetryable
             )
         }
-        return Response.success(
-            "{\"status\":\"ok\"}".toResponseBody("application/json".toMediaTypeOrNull())
-        )
+        return CloudSyncResult.Success(bytesTransferred = file.length())
+    }
+
+    override suspend fun downloadFile(remotePath: String, destinationFile: File): CloudSyncResult {
+        return CloudSyncResult.NotSupported
     }
 }
 
@@ -138,13 +133,13 @@ class CloudSyncWorkerTest {
 
     private lateinit var context: Context
     private lateinit var fakeDao: FakeFileDao
-    private lateinit var fakeApiService: FakeCloudApiService
+    private lateinit var fakeAdapter: FakeCloudProviderAdapter
 
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
         fakeDao = FakeFileDao()
-        fakeApiService = FakeCloudApiService()
+        fakeAdapter = FakeCloudProviderAdapter()
     }
 
     @After
@@ -158,7 +153,12 @@ class CloudSyncWorkerTest {
                 workerClassName: String,
                 workerParameters: WorkerParameters
             ): ListenableWorker {
-                return CloudSyncWorker(appContext, workerParameters, fakeDao, fakeApiService)
+                return CloudSyncWorker(
+                    appContext,
+                    workerParameters,
+                    daoOverride = fakeDao,
+                    providerAdapterOverride = fakeAdapter
+                )
             }
         }
 
@@ -186,8 +186,8 @@ class CloudSyncWorkerTest {
         )
         fakeDao.insertCloudSyncItem(syncItem)
 
-        fakeApiService.shouldFail = false
-        fakeApiService.exceptionToThrow = null
+        fakeAdapter.shouldFail = false
+        fakeAdapter.exceptionToThrow = null
 
         val worker = createWorker(runAttemptCount = 0)
 
@@ -218,7 +218,7 @@ class CloudSyncWorkerTest {
         )
         fakeDao.insertCloudSyncItem(syncItem)
 
-        fakeApiService.exceptionToThrow = IOException("Network connection dropped")
+        fakeAdapter.exceptionToThrow = IOException("Network connection dropped")
 
         val worker = createWorker(runAttemptCount = 0)
 
@@ -249,7 +249,7 @@ class CloudSyncWorkerTest {
         )
         fakeDao.insertCloudSyncItem(syncItem)
 
-        fakeApiService.exceptionToThrow = IOException("Network connection dropped")
+        fakeAdapter.exceptionToThrow = IOException("Network connection dropped")
 
         val worker = createWorker(runAttemptCount = 3)
 
@@ -312,8 +312,8 @@ class CloudSyncWorkerTest {
         )
         fakeDao.insertCloudSyncItem(syncItem)
 
-        fakeApiService.shouldFail = true
-        fakeApiService.httpStatusCode = 404
+        fakeAdapter.shouldFail = true
+        fakeAdapter.isRetryable = false
 
         val worker = createWorker(runAttemptCount = 0)
         val result = worker.doWork()
@@ -350,15 +350,4 @@ class CloudSyncWorkerTest {
         val itemInDb = itemsInDb.find { it.id == 106L }
         assertEquals("FAILED", itemInDb?.status)
     }
-
-    @Test
-    fun testRestCloudProviderAdapter_downloadFile_returnsNotSupported() = runBlocking {
-        val adapter = com.example.data.RestCloudProviderAdapter("GOOGLE_DRIVE", fakeApiService)
-        val destFile = File(context.cacheDir, "downloaded.txt")
-
-        val result = adapter.downloadFile("remote/path.txt", destFile)
-
-        assertEquals(com.example.data.CloudSyncResult.NotSupported, result)
-    }
 }
-

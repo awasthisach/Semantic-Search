@@ -6,21 +6,16 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
 import com.example.data.CloudSyncItemEntity
-import com.example.data.CloudApiService
 import com.example.data.FileDao
 import com.example.data.CloudProviderAdapter
 import com.example.data.CloudSyncResult
-import com.example.data.RestCloudProviderAdapter
 import kotlinx.coroutines.flow.first
 import java.io.File
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
 
 class CloudSyncWorker @JvmOverloads constructor(
     appContext: Context,
     workerParams: WorkerParameters,
     private val daoOverride: FileDao? = null,
-    private val apiServiceOverride: CloudApiService? = null,
     private val providerAdapterOverride: CloudProviderAdapter? = null
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -51,30 +46,13 @@ class CloudSyncWorker @JvmOverloads constructor(
                 return Result.success()
             }
 
-            val apiService = if (providerAdapterOverride == null && apiServiceOverride == null) {
-                val configUrl = try {
-                    com.example.BuildConfig.API_BASE_URL
-                } catch (e: Throwable) {
-                    null
-                }
-
-                if (isPlaceholderUrl(configUrl)) {
-                    Log.w(TAG, "Cloud API base URL is missing or set to a placeholder ($configUrl). Aborting cloud sync.")
-                    for (item in pendingOrQueued) {
-                        dao.insertCloudSyncItem(item.copy(status = "FAILED", lastSyncedMs = System.currentTimeMillis()))
-                    }
-                    return Result.failure()
-                }
-
-                val formattedUrl = if (configUrl!!.endsWith("/")) configUrl else "$configUrl/"
-                val retrofit = Retrofit.Builder()
-                    .baseUrl(formattedUrl)
-                    .addConverterFactory(MoshiConverterFactory.create())
-                    .build()
-                retrofit.create(CloudApiService::class.java)
-            } else {
-                apiServiceOverride
-            }
+            val authManager = com.example.data.GoogleAuthManagerFactory.getInstance(applicationContext)
+            val syncEngine = com.example.data.CloudSyncEngine(
+                context = applicationContext,
+                dao = dao,
+                authManager = authManager,
+                providerAdapterOverride = providerAdapterOverride
+            )
 
             var syncedCount = 0
             var failedCount = 0
@@ -85,11 +63,7 @@ class CloudSyncWorker @JvmOverloads constructor(
                 val uploadingItem = item.copy(status = "UPLOADING")
                 dao.insertCloudSyncItem(uploadingItem)
 
-                val file = File(item.filePath)
-                val adapter = providerAdapterOverride
-                    ?: RestCloudProviderAdapter(item.provider, apiService!!)
-
-                val syncResult = adapter.uploadFile(file, item.fileName)
+                val syncResult = syncEngine.syncItem(item)
                 when (syncResult) {
                     is CloudSyncResult.Success -> {
                         val updatedItem = item.copy(
@@ -130,7 +104,7 @@ class CloudSyncWorker @JvmOverloads constructor(
                     Result.retry()
                 }
             } else if (failedCount > 0) {
-                // Permanent failure (e.g. HTTP 4xx or missing file) - do not retry
+                // Permanent failure (e.g. missing file) - do not retry
                 Result.failure()
             } else {
                 Result.success()
@@ -141,18 +115,8 @@ class CloudSyncWorker @JvmOverloads constructor(
         }
     }
 
-    private fun isPlaceholderUrl(url: String?): Boolean {
-        if (url.isNullOrBlank()) return true
-        val lower = url.lowercase()
-        return lower.contains("example.com") ||
-                lower.contains("localhost") ||
-                lower.contains("127.0.0.1") ||
-                !lower.startsWith("http")
-    }
-
     companion object {
         const val WORK_NAME = "VVF_CLOUD_SYNC_WORK"
         private const val TAG = "CloudSyncWorker"
     }
 }
-
