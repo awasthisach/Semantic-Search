@@ -87,7 +87,6 @@ jobs:
         fi
 
     - name: Build Release AAB
-      if: env.HAS_KEYSTORE == 'true'
       env:
         KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
         STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
@@ -170,13 +169,11 @@ jobs:
 
       - name: Run Instrumented Tests via Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
-        continue-on-error: true
         with:
-          api-level: 29
-          target: default
+          api-level: 35
+          target: google_apis
           arch: x86_64
-          profile: Nexus 6
+          profile: pixel_2
           disable-animations: true
-          emulator-options: -no-window -gpu off -no-snapshot -noaudio
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
           script: ./gradlew :app:connectedDebugAndroidTest
-
