@@ -167,75 +167,131 @@ fun VaultScreen(
             title = { Text(stringResource(R.string.change_master_pin)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = changePinOld,
-                        onValueChange = { changePinOld = it },
-                        label = { Text(stringResource(R.string.current_pin)) },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = changePinNew,
-                        onValueChange = { changePinNew = it },
-                        label = { Text(stringResource(R.string.new_4_digit_pin)) },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = changePinConfirm,
-                        onValueChange = { changePinConfirm = it },
-                        label = { Text(stringResource(R.string.confirm_new_pin)) },
-                        singleLine = true
-                    )
-                    if (changePinError != null) {
-                        Text(
-                            text = changePinError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    OutlinedTextField(value = changePinOld, onValueChange = { changePinOld = it }, label = { Text(stringResource(R.string.current_pin)) }, singleLine = true)
+                    OutlinedTextField(value = changePinNew, onValueChange = { changePinNew = it }, label = { Text(stringResource(R.string.new_4_digit_pin)) }, singleLine = true)
+                    OutlinedTextField(value = changePinConfirm, onValueChange = { changePinConfirm = it }, label = { Text(stringResource(R.string.confirm_new_pin)) }, singleLine = true)
+                    if (changePinError != null) Text(text = changePinError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (changePinNew != changePinConfirm) {
-                            changePinError = "New PIN and confirmation do not match."
-                        } else if (changePinNew.length != 4 || !changePinNew.all { it.isDigit() }) {
-                            changePinError = "New PIN must be exactly 4 digits."
-                        } else {
-                            val success = viewModel.changeVaultPin(changePinOld, changePinNew)
-                            if (success) {
-                                showChangePinDialog = false
-                                changePinOld = ""
-                                changePinNew = ""
-                                changePinConfirm = ""
-                                changePinError = null
-                            } else {
-                                changePinError = "Failed to update PIN. Check current PIN."
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange)
-                ) {
-                    Text(stringResource(R.string.change))
-                }
+                Button(onClick = {
+                    if (changePinNew != changePinConfirm) changePinError = "New PIN and confirmation do not match."
+                    else if (changePinNew.length != 4 || !changePinNew.all { it.isDigit() }) changePinError = "New PIN must be exactly 4 digits."
+                    else {
+                        val success = viewModel.changeVaultPin(changePinOld, changePinNew)
+                        if (success) {
+                            showChangePinDialog = false
+                            changePinOld = ""; changePinNew = ""; changePinConfirm = ""; changePinError = null
+                        } else changePinError = "Failed to update PIN. Check current PIN."
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange)) { Text(stringResource(R.string.change)) }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showChangePinDialog = false
-                        changePinOld = ""
-                        changePinNew = ""
-                        changePinConfirm = ""
-                        changePinError = null
-                    }
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
+                TextButton(onClick = { showChangePinDialog = false; changePinOld = ""; changePinNew = ""; changePinConfirm = ""; changePinError = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
     if (!isUnlocked) {
-        // PIN keypad and remaining Vault UI intentionally unchanged.
-        // Existing implementation follows below.
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(BhagwaOrange.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+                Icon(imageVector = Icons.Default.Lock, contentDescription = stringResource(R.string.vault_locked), tint = BhagwaOrange, modifier = Modifier.size(40.dp))
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = "Secure Encrypted Vault", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text(text = "Enter 4-Digit Master PIN", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(4) { index -> Box(modifier = Modifier.size(18.dp).clip(CircleShape).background(if (index < enteredPin.length) BhagwaOrange else MaterialTheme.colorScheme.surfaceVariant)) }
+            }
+            if (pinError != null) { Spacer(modifier = Modifier.height(12.dp)); Text(text = pinError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            Spacer(modifier = Modifier.height(32.dp))
+            val keypadDigits = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "BIO", "0", "DEL")
+            LazyVerticalGrid(columns = GridCells.Fixed(3), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.width(280.dp)) {
+                items(keypadDigits) { digit ->
+                    when (digit) {
+                        "BIO" -> if (isBiometricAvailable && biometricEnabled) IconButton(onClick = { showBiometricPrompt() }, modifier = Modifier.size(64.dp).clip(CircleShape).background(EmeraldGreen.copy(alpha = 0.15f))) { Icon(Icons.Default.Fingerprint, contentDescription = stringResource(R.string.biometric), tint = EmeraldGreen) } else Box(modifier = Modifier.size(64.dp))
+                        "DEL" -> IconButton(onClick = { viewModel.clearPinDigit() }, modifier = Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) { Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = stringResource(R.string.delete), tint = MaterialTheme.colorScheme.onSurface) }
+                        else -> Surface(onClick = { viewModel.appendPinDigit(digit) }, modifier = Modifier.size(64.dp).testTag("pin_key_$digit"), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) { Box(contentAlignment = Alignment.Center) { Text(text = digit, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) } }
+                    }
+                }
+            }
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth().background(Brush.linearGradient(colors = listOf(CosmicBlue, MaterialTheme.colorScheme.surfaceVariant))).padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.LockOpen, contentDescription = stringResource(R.string.unlocked), tint = EmeraldGreen); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Encrypted Vault Unlocked", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+                                Text(text = "AES-256 Android Keystore Cipher Active", fontSize = 12.sp, color = SoftGold)
+                            }
+                            Button(onClick = { viewModel.lockVault() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.lock_vault)) }
+                        }
+                    }
+                }
+            }
+            item {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(text = "Vault Security Options", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BhagwaOrange)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (isBiometricAvailable) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column { Text(text = stringResource(R.string.biometric_unlock), fontWeight = FontWeight.SemiBold, fontSize = 14.sp); Text(text = stringResource(R.string.use_fingerprint_or_face_id_to_), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                Switch(checked = biometricEnabled, onCheckedChange = { biometricEnabled = it }, colors = SwitchDefaults.colors(checkedThumbColor = BhagwaOrange))
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column { Text(text = stringResource(R.string.auto_lock_timer), fontWeight = FontWeight.SemiBold, fontSize = 14.sp); Text(text = stringResource(R.string.locks_automatically_when_inact), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            Text(text = autoLockTimer, color = BhagwaOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clickable { autoLockTimer = if (autoLockTimer == "1 minute") "5 minutes" else "1 minute" })
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column { Text(text = stringResource(R.string.change_master_pin), fontWeight = FontWeight.SemiBold, fontSize = 14.sp); Text(text = stringResource(R.string.update_your_4_digit_security_p), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            OutlinedButton(onClick = { showChangePinDialog = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = BhagwaOrange), modifier = Modifier.testTag("change_pin_button")) { Text(stringResource(R.string.change), fontSize = 12.sp) }
+                        }
+                    }
+                }
+            }
+            item {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f))) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(imageVector = Icons.Default.Shield, contentDescription = "Best-Effort Overwrite Disclaimer", tint = BhagwaOrange, modifier = Modifier.size(24.dp))
+                        Column {
+                            Text(text = "Best-Effort Source Overwrite", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = "When encrypting a file to the Vault, the original source is overwritten matching its exact file size (3-pass random/zeros data) before deletion.\n\nDisclaimer: Modern flash/SSD storage utilizes physical Wear-Leveling controllers. Software-level overwriting is performed on a best-effort basis and does not guarantee absolute block-level physical erasure.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 16.sp)
+                        }
+                    }
+                }
+            }
+            item { Text(text = "Encrypted Files (${vaultItems.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground) }
+            if (vaultItems.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(imageVector = Icons.Default.Shield, contentDescription = stringResource(R.string.vault_empty), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(text = "No encrypted files in vault.\nUse File Manager menu to encrypt sensitive files.", textAlign = TextAlign.Center, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            } else {
+                items(vaultItems, key = { it.id }) { item ->
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(EmeraldGreen.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Security, contentDescription = stringResource(R.string.encrypted), tint = EmeraldGreen) }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column { Text(text = item.originalName, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text(text = "${item.encryptedName} • ${formatFileSize(item.sizeBytes)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                            OutlinedButton(onClick = { viewModel.unlockFromVault(item) }) { Text(stringResource(R.string.decrypt), fontSize = 12.sp, color = EmeraldGreen) }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
