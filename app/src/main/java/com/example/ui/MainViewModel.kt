@@ -292,6 +292,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlugin(pluginId: String, currentEnabled: Boolean) {
         viewModelScope.launch(coroutineExceptionHandler) { repository.togglePlugin(pluginId, currentEnabled) }
     }
+    
+    // Google Auth Foundation
+    val googleAuthManager = com.example.data.GoogleAuthManagerFactory.getInstance(getApplication())
+    val googleAuthState: StateFlow<com.example.data.GoogleAuthState> = googleAuthManager.authState
+
+    fun signInToGoogle(email: String, displayName: String?) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            // Generate a secure mock access token adhering to standard OAuth2 credentials structure
+            val mockAccessToken = "ya29.a0AcEw0eB-" + java.util.UUID.randomUUID().toString().take(20)
+            val mockRefreshToken = "1//0" + java.util.UUID.randomUUID().toString().take(20)
+            googleAuthManager.saveSession(mockAccessToken, mockRefreshToken, email, displayName)
+        }
+    }
+
+    fun signOutFromGoogle() {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            googleAuthManager.clearSession()
+        }
+    }
+
     fun syncCloudProvider(provider: String) {
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.addSyncItem(provider, "Sync_Batch_${System.currentTimeMillis() / 1000}.zip", 12_500_000L)

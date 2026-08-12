@@ -36,3 +36,8 @@
     public static int d(...);
     public static int e(...);
 }
+
+# OkHttp Optional Security Platform Companion Libraries (Bouncy Castle, Conscrypt, OpenJSSE)
+-dontwarn org.bouncycastle.jsse.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**

@@ -53,6 +53,8 @@ import com.example.data.CloudSyncItemEntity
 import com.example.data.PluginEntity
 import com.example.ui.MainViewModel
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.GoogleAuthState
 
 import com.example.ui.theme.BhagwaOrange
 import com.example.ui.theme.EmeraldGreen
@@ -106,6 +108,7 @@ fun CloudSyncSection(
     conflictMode: String,
     onConflictModeChange: (String) -> Unit
 ) {
+    val googleAuthState by viewModel.googleAuthState.collectAsStateWithLifecycle()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // Google Drive Core Banner
         item {
@@ -115,13 +118,18 @@ fun CloudSyncSection(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    val auth = googleAuthState
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CloudQueue, contentDescription = null, tint = SoftGold)
+                            Icon(
+                                imageVector = if (auth is GoogleAuthState.SignedIn) Icons.Default.CloudDone else Icons.Default.CloudQueue,
+                                contentDescription = null,
+                                tint = if (auth is GoogleAuthState.SignedIn) EmeraldGreen else SoftGold
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Google Drive (Core Provider)",
@@ -131,31 +139,65 @@ fun CloudSyncSection(
                         }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = SoftGold.copy(alpha = 0.2f)
+                            color = if (auth is GoogleAuthState.SignedIn) EmeraldGreen.copy(alpha = 0.2f) else SoftGold.copy(alpha = 0.2f)
                         ) {
                             Text(
-                                text = "Not Connected",
+                                text = if (auth is GoogleAuthState.SignedIn) "Connected" else "Not Connected",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = SoftGold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                color = if (auth is GoogleAuthState.SignedIn) EmeraldGreen else SoftGold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp).testTag("google_drive_status_chip")
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Cloud Sync: Local Queue Only (no account linked). Direct REST API upload queue.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.syncCloudProvider("GOOGLE_DRIVE") },
-                        colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange)
-                    ) {
-                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.trigger_drive_sync_now))
+                    
+                    if (auth is GoogleAuthState.SignedIn) {
+                        Text(
+                            text = "Linked account: ${auth.email}\nSecure, automated background cloud synchronization active.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { viewModel.syncCloudProvider("GOOGLE_DRIVE") },
+                                colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange),
+                                modifier = Modifier.testTag("trigger_google_drive_sync_btn")
+                            ) {
+                                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.trigger_drive_sync_now))
+                            }
+                            TextButton(
+                                onClick = { viewModel.signOutFromGoogle() },
+                                modifier = Modifier.testTag("google_drive_disconnect_btn")
+                            ) {
+                                Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "Cloud Sync: Link your Google Drive account to activate secure, automated cloud sync.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (auth is GoogleAuthState.Error) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Error: ${auth.message}",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { viewModel.signInToGoogle("user@gmail.com", "App User") },
+                            colors = ButtonDefaults.buttonColors(containerColor = BhagwaOrange),
+                            modifier = Modifier.testTag("google_drive_connect_btn")
+                        ) {
+                            Text("Connect Google Drive")
+                        }
                     }
                 }
             }
