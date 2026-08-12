@@ -122,10 +122,6 @@ abstract class AppDatabase : RoomDatabase() {
                 .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
-                if (com.example.BuildConfig.DEBUG) {
-                    builder.fallbackToDestructiveMigration(true)
-                }
-
                 val instance = builder.build()
                 INSTANCE = instance
                 instance

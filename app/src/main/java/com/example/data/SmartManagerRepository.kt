@@ -743,7 +743,7 @@ open class SmartManagerRepository(
         }
     }
 
-    fun enqueueBackgroundIndexWork() {
+    open fun enqueueBackgroundIndexWork() {
         try {
             val constraints = androidx.work.Constraints.Builder()
                 .setRequiresBatteryNotLow(true)

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
@@ -461,7 +461,7 @@ private fun getCategoryIcon(category: FileCategory): ImageVector {
         FileCategory.DOCUMENTS -> Icons.Default.Description
         FileCategory.AUDIO -> Icons.Default.AudioFile
         FileCategory.VIDEO -> Icons.Default.Movie
-        FileCategory.DOWNLOADS, FileCategory.OTHER, FileCategory.ARCHIVES, FileCategory.APKS -> Icons.Default.InsertDriveFile
+        FileCategory.DOWNLOADS, FileCategory.OTHER, FileCategory.ARCHIVES, FileCategory.APKS -> Icons.AutoMirrored.Filled.InsertDriveFile
     }
 }
 

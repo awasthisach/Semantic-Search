@@ -111,6 +111,7 @@ fun FileManagerScreen(
     var newFileNameText by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val isPageLoading by viewModel.isPageLoading.collectAsState()
+    val persistedFolderUris by viewModel.persistedFolderUris.collectAsState()
     val shouldLoadMore = remember {
         derivedStateOf {
             if (files.isEmpty() && !isPageLoading) return@derivedStateOf true
@@ -316,6 +317,13 @@ fun FileManagerScreen(
         // Local File Picker Component
         LocalFilePickerCard(
             onFilesPicked = { uris -> viewModel.processPickedUris(uris) },
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        // SAF Directory Picker Component
+        SafDirectoryPickerCard(
+            onDirectoryPicked = { uri -> viewModel.processPickedDirectoryUri(uri) },
+            persistedFolders = persistedFolderUris,
+            onRemoveFolder = { uriStr -> viewModel.removePersistedFolderUri(uriStr) },
             modifier = Modifier.padding(bottom = 12.dp)
         )
         // Active Files List
@@ -767,6 +775,137 @@ fun LocalFilePickerCard(
                 contentDescription = null,
                 tint = BhagwaOrange
             )
+        }
+    }
+}
+
+@Composable
+fun SafDirectoryPickerCard(
+    onDirectoryPicked: (Uri) -> Unit,
+    persistedFolders: Set<String>,
+    onRemoveFolder: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            onDirectoryPicked(uri)
+        }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = EmeraldGreen.copy(alpha = 0.12f)
+            ),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { launcher.launch(null) }
+                .testTag("saf_directory_picker_card")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = EmeraldGreen,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Link SAF Directory Tree",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Grant persistable full access to folders",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = EmeraldGreen
+                )
+            }
+        }
+
+        if (persistedFolders.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Linked Directories (${persistedFolders.size})",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+            persistedFolders.forEach { uriStr ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = EmeraldGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val folderName = try {
+                                Uri.parse(uriStr).lastPathSegment ?: uriStr
+                            } catch (e: Exception) {
+                                uriStr
+                            }
+                            Text(
+                                text = folderName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = { onRemoveFolder(uriStr) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Unlink folder",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
