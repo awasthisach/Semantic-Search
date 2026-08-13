@@ -19,35 +19,29 @@ jobs:
   build-and-test:
     name: Build & Test Android App
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v6
-
     - name: Set up JDK 17
       uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
-
     - name: Setup Gradle 9.3.1
       uses: gradle/actions/setup-gradle@v6
       with:
         gradle-version: '9.3.1'
-
     - name: Regenerate and verify Gradle Wrapper
       run: |
         gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
         actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
         echo "Gradle wrapper SHA-256: $actual"
         test "$actual" = "$EXPECTED_WRAPPER_SHA256"
-
     - name: Write google-services.json from secret (if set)
       run: |
         if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
           printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
         fi
-
     - name: Verify google-services.json exists
       run: |
         if [ -f app/google-services.json ]; then
@@ -56,7 +50,6 @@ jobs:
           echo "ERROR: app/google-services.json not found! Firebase requires google-services.json."
           exit 1
         fi
-
     - name: Create .env File
       run: |
         if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
@@ -67,19 +60,14 @@ jobs:
             printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           fi
         fi
-
     - name: Run Unit Tests
       run: ./gradlew :app:testDebugUnitTest
-
     - name: Run Lint
       run: ./gradlew :app:lintDebug
-
     - name: Run Detekt
       run: ./gradlew :app:detekt
-
     - name: Build Debug APK
       run: ./gradlew :app:assembleDebug
-
     - name: Decode Keystore (if configured)
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -91,7 +79,6 @@ jobs:
         else
           echo "HAS_KEYSTORE=false" >> "$GITHUB_ENV"
         fi
-
     - name: Build Release AAB
       env:
         KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
@@ -99,13 +86,11 @@ jobs:
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: ./gradlew :app:bundleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
-
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
-
     - name: Upload Release AAB Artifact
       if: env.HAS_KEYSTORE == 'true'
       uses: actions/upload-artifact@v4
@@ -119,40 +104,34 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
-
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.3.1'
-
       - name: Regenerate and verify Gradle Wrapper
         run: |
           gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
           actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
           echo "Gradle wrapper SHA-256: $actual"
           test "$actual" = "$EXPECTED_WRAPPER_SHA256"
-
       - name: Write google-services.json from secret (if set)
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
             printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
           fi
-
       - name: Verify google-services.json exists
-      run: |
-        if [ -f app/google-services.json ]; then
-          test -s app/google-services.json
-        else
-          echo "ERROR: app/google-services.json not found! Firebase requires google-services.json."
-          exit 1
-        fi
-
+        run: |
+          if [ -f app/google-services.json ]; then
+            test -s app/google-services.json
+          else
+            echo "ERROR: app/google-services.json not found! Firebase requires google-services.json."
+            exit 1
+          fi
       - name: Create .env File
         run: |
           if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
@@ -163,14 +142,12 @@ jobs:
               printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
             fi
           fi
-
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           test -e /dev/kvm
-
       - name: Run Instrumented Tests via Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
