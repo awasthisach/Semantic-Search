@@ -38,7 +38,7 @@ android {
         storeFile = debugKeystoreFile
         storePassword = "android"
         keyAlias = "androiddebugkey"
-        keyPassword = "androiddebugkey"
+        keyPassword = "android"
       }
     }
   }
