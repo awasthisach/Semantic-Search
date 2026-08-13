@@ -44,25 +44,38 @@ class VaultRepository(
     suspend fun unlockFromVault(vaultItem: VaultItemEntity, file: FileItemEntity?): Boolean = withContext(Dispatchers.IO) {
         try {
             val targetFile = file ?: dao.getVaultFileByName(vaultItem.originalName)
-            if (targetFile != null) {
-                val iv = Base64.decode(vaultItem.ivBase64, Base64.DEFAULT)
-                val decryptResult = PhysicalStorageManager.decryptAndRestore(
-                    context,
-                    vaultItem.encryptedFilePath,
-                    targetFile.path,
-                    iv,
-                    keystoreVaultManager
+
+            // Never discard the only encrypted copy merely because the original
+            // metadata entry is missing. The encrypted vault item remains recoverable.
+            if (targetFile == null) {
+                throw java.io.FileNotFoundException(
+                    "Original file metadata is missing; encrypted vault data was preserved."
                 )
-                if (decryptResult.isSuccess) {
-                    dao.updateFile(targetFile.copy(isVault = false))
-                    dao.deleteVaultItemById(vaultItem.id)
-                    true
-                } else {
-                    throw decryptResult.exceptionOrNull() ?: java.io.IOException("Failed to physically decrypt vault file")
-                }
-            } else {
+            }
+
+            val encryptedVaultFile = java.io.File(vaultItem.encryptedFilePath)
+            if (!encryptedVaultFile.exists() || !encryptedVaultFile.isFile) {
+                throw java.io.FileNotFoundException(
+                    "Encrypted vault file is missing: ${vaultItem.encryptedFilePath}"
+                )
+            }
+
+            val iv = Base64.decode(vaultItem.ivBase64, Base64.DEFAULT)
+            require(iv.size == 12) { "Invalid vault IV." }
+
+            val decryptResult = PhysicalStorageManager.decryptAndRestore(
+                context,
+                vaultItem.encryptedFilePath,
+                targetFile.path,
+                iv,
+                keystoreVaultManager
+            )
+            if (decryptResult.isSuccess) {
+                dao.updateFile(targetFile.copy(isVault = false, path = decryptResult.getOrThrow()))
                 dao.deleteVaultItemById(vaultItem.id)
                 true
+            } else {
+                throw decryptResult.exceptionOrNull() ?: java.io.IOException("Failed to physically decrypt vault file")
             }
         } catch (e: Exception) {
             android.util.Log.e("VaultRepository", "Failed to unlock from vault: ${e.message}", e)
