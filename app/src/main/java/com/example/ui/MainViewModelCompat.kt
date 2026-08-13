@@ -68,7 +68,7 @@ fun MainViewModel.cleanSelectedDuplicates() {
     }
 }
 
-fun MainViewModel.moveToRecycleBin(file: FileItemEntity) { viewModelScope.launch { repository.moveToRecycleBin(file) } }
+fun MainViewModel.moveToRecycleBin(file: FileItemEntity) { requestMoveToRecycleBin(file) }
 fun MainViewModel.restoreFromRecycleBin(file: FileItemEntity) { viewModelScope.launch { repository.restoreFromRecycleBin(file) } }
 fun MainViewModel.deletePermanently(file: FileItemEntity) { viewModelScope.launch { repository.deletePermanently(file) } }
 fun MainViewModel.emptyRecycleBin() { viewModelScope.launch { repository.emptyRecycleBin() } }
