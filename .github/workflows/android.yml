@@ -26,10 +26,17 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Gradle
+    - name: Setup Gradle 9.3.1
       uses: gradle/actions/setup-gradle@v6
       with:
-        validate-wrappers: true
+        gradle-version: '9.3.1'
+        validate-wrappers: false
+
+    - name: Regenerate Gradle Wrapper from declared version
+      run: gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+
+    - name: Validate Gradle Wrapper
+      uses: gradle/actions/wrapper-validation@v6
 
     - name: Write google-services.json from secret (if set)
       run: |
@@ -115,10 +122,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
         with:
-          validate-wrappers: true
+          gradle-version: '9.3.1'
+          validate-wrappers: false
+
+      - name: Regenerate Gradle Wrapper from declared version
+        run: gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: Write google-services.json from secret (if set)
         run: |
