@@ -71,7 +71,6 @@ object ProductionFileIo {
 
         if (source.renameTo(destination)) return Result.success(destination.absolutePath)
 
-        // Cross-volume/filesystem fallback: copy completely, verify size, then delete source.
         return try {
             copyLocalToLocal(source, destination)
             if (source.delete()) Result.success(destination.absolutePath)
@@ -187,11 +186,13 @@ object ProductionFileIo {
             } else {
                 copyLocalToLocal(File(source), trashFile)
             }
-            copyResult.getOrElse { return Result.failure(it) }
+            if (copyResult.isFailure) {
+                return Result.failure(copyResult.exceptionOrNull() ?: IOException("Unable to copy source into recycle bin."))
+            }
             val deleteResult = delete(context, source)
-            deleteResult.getOrElse { error ->
+            if (deleteResult.isFailure) {
                 trashFile.delete()
-                return Result.failure(error)
+                return Result.failure(deleteResult.exceptionOrNull() ?: IOException("Unable to delete original after recycle-bin copy."))
             }
             Result.success(trashFile.absolutePath)
         } catch (e: Exception) {
