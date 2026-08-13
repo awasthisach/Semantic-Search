@@ -1,14 +1,21 @@
 package com.example.storage
 
+import android.app.Application
+import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
 class ProductionFileIoTest {
-    private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     @Test
     fun validateFileName_rejects_path_traversal_and_control_characters() {
