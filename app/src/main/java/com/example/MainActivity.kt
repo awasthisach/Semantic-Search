@@ -3,6 +3,12 @@ package com.example
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.ExistingPeriodicWorkPolicy
+import com.example.worker.CacheCleanupWorker
+import java.util.concurrent.TimeUnit
+
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +33,9 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val cacheCleanupRequest = PeriodicWorkRequestBuilder<CacheCleanupWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(CacheCleanupWorker.WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, cacheCleanupRequest)
+
 
         setContent {
             VVFSmartManagerTheme {

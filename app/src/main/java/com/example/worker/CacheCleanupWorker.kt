@@ -40,12 +40,7 @@ class CacheCleanupWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error in CacheCleanupWorker: ${e.message}", e)
-            if (runAttemptCount >= 3) {
-                Log.e(TAG, "CacheCleanupWorker failed after $runAttemptCount attempts. Abandoning retry.")
-                Result.failure()
-            } else {
-                Result.retry()
-            }
+            Result.failure()
         }
     }
 

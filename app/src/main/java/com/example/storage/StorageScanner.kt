@@ -322,7 +322,11 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
             ""
         } finally {
             try {
-                retriever.release()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    retriever.close()
+                } else {
+                    retriever.release()
+                }
             } catch (ignored: Exception) {}
         }
     }

@@ -2,19 +2,13 @@ package com.example.ui
 
 import com.example.R
 import androidx.compose.ui.res.stringResource
-// MainViewModel - Phase 6 Step 7 Complete (Video Duplicate Engine Integration)
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.CloudSyncItemEntity
-import com.example.data.CategoryStat
-import com.example.data.DuplicateGroup
-import com.example.data.FileCategory
-import com.example.data.FileItemEntity
-import com.example.data.PluginEntity
-import com.example.data.SmartManagerRepository
-import com.example.data.VaultItemEntity
+import com.example.data.*
 import com.example.ui.components.PickableLocalFile
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.work.WorkManager
 
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = (application as com.example.VVFApplication).repository
     private val _globalError = MutableStateFlow<String?>(null)

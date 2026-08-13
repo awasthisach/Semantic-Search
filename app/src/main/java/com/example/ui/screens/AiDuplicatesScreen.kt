@@ -3,7 +3,10 @@
 package com.example.ui.screens
 import com.example.R
 import androidx.compose.ui.res.stringResource
-// AiDuplicatesScreen - Phase 6 Step 7 Complete (Video Duplicate Engine UI Integration)
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.testTag
+import com.example.ui.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
