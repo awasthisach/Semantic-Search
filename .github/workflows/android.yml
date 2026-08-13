@@ -31,6 +31,7 @@ jobs:
       uses: gradle/actions/setup-gradle@v6
       with:
         gradle-version: '9.3.1'
+        validate-wrappers: false
     - name: Regenerate and verify Gradle Wrapper
       run: |
         gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
@@ -113,6 +114,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.3.1'
+          validate-wrappers: false
       - name: Regenerate and verify Gradle Wrapper
         run: |
           gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
