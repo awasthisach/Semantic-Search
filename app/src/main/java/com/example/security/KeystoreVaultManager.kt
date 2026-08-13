@@ -21,12 +21,21 @@ class KeystoreVaultManager {
     }
 
     private var fallbackKey: SecretKey? = null
-    private val keyStore: KeyStore? = try {
-        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-    } catch (e: Throwable) { null }
+    private val keyStore: KeyStore? by lazy {
+        try {
+            KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Android Keystore is unavailable in this runtime: ${e.message}")
+            null
+        }
+    }
 
-    init { ensureSecretKeyExists() }
-
+    /**
+     * Keystore access is intentionally lazy. Constructing the security manager must not
+     * require Android Keystore to exist; only encryption/decryption operations need it.
+     * This keeps JVM/Robolectric tests deterministic while real Android execution still
+     * prefers the hardware-backed Android Keystore.
+     */
     private fun ensureSecretKeyExists() {
         if (keyStore != null) {
             try {
