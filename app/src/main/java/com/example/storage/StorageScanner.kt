@@ -58,15 +58,12 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
             }
         }
 
-        // Shared storage is represented by stable content:// URIs. MediaStore.DATA
-        // is intentionally not used because it is restricted on modern Android.
         try {
             scanMediaStore(processedPaths, computeHashes, emitItem)
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning MediaStore: ${e.message}", e)
         }
 
-        // App-private directories remain directly accessible with java.io.File.
         try {
             val appDirs = listOfNotNull(context.getExternalFilesDir(null), context.filesDir, context.cacheDir)
             for (appDir in appDirs) {
@@ -86,7 +83,6 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
         totalDiscovered
     }
 
-    /** Scans a user-granted SAF tree. The caller must persist the tree permission. */
     suspend fun scanSafTree(
         treeUri: Uri,
         computeHashes: Boolean = false,
@@ -238,13 +234,13 @@ class StorageScanner(private val context: Context) : HammingDistanceCalculator {
 
     suspend fun computeFileHash(file: File): String = withContext(Dispatchers.IO) {
         if (!file.exists() || !file.canRead()) return@withContext ""
-        file.inputStream().use(::computeStreamHash)
+        file.inputStream().use { input -> computeStreamHash(input) }
     }
 
     suspend fun computeContentUriHash(uri: Uri): String = withContext(Dispatchers.IO) {
         val input = try { context.contentResolver.openInputStream(uri) } catch (_: Exception) { null }
             ?: return@withContext ""
-        input.use(::computeStreamHash)
+        input.use { stream -> computeStreamHash(stream) }
     }
 
     private suspend fun computeStreamHash(input: InputStream): String {
