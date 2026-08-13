@@ -1,7 +1,7 @@
 package com.example.data
 
 import android.content.Context
-import com.example.storage.PhysicalStorageManager
+import com.example.storage.ProductionFileIo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -18,7 +18,7 @@ class FileRepository(
         dao.getFilteredFilesPaged(category, query, limit, offset)
 
     suspend fun renameFile(file: FileItemEntity, newName: String): FileItemEntity = withContext(Dispatchers.IO) {
-        val renameResult = PhysicalStorageManager.renameFile(context, file.path, newName)
+        val renameResult = ProductionFileIo.rename(context, file.path, newName)
         if (renameResult.isFailure) {
             throw renameResult.exceptionOrNull() ?: java.io.IOException("Failed to physically rename file")
         }
