@@ -26,14 +26,11 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Gradle 9.3.1
+    - name: Setup Gradle from project wrapper
       uses: gradle/actions/setup-gradle@v6
       with:
-        gradle-version: '9.3.1'
-        validate-wrappers: false
-
-    - name: Regenerate Gradle Wrapper from declared version
-      run: gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+        gradle-version: 'wrapper'
+        validate-wrappers: true
 
     - name: Validate Gradle Wrapper
       uses: gradle/actions/wrapper-validation@v6
@@ -122,14 +119,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle 9.3.1
+      - name: Setup Gradle from project wrapper
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '9.3.1'
-          validate-wrappers: false
-
-      - name: Regenerate Gradle Wrapper from declared version
-        run: gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+          gradle-version: 'wrapper'
+          validate-wrappers: true
 
       - name: Validate Gradle Wrapper
         uses: gradle/actions/wrapper-validation@v6
@@ -176,4 +170,4 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: ./gradlew :app:connectedDebugAndroidTest
+          script: gradle :app:connectedDebugAndroidTest
