@@ -1,19 +1,10 @@
 package com.example
 
-import android.app.Application
-import android.content.Context
 import com.example.storage.ProductionFileIo
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class)
 class ProductionFileIoTest {
-    private val context: Context get() = RuntimeEnvironment.getApplication()
 
     @Test
     fun validateFileNameRejectsUnsafeNames() {
