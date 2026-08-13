@@ -1,13 +1,9 @@
 package com.example.ui
 
-import android.app.Activity
-import android.app.PendingIntent
-import android.content.Intent
+import android.app.RecoverableSecurityException
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
-import androidx.activity.result.IntentSenderRequest
 import androidx.lifecycle.viewModelScope
 import com.example.data.FileItemEntity
 import com.example.storage.MediaStoreMutationManager
@@ -18,7 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
-import java.security.RecoverableSecurityException
 import java.util.WeakHashMap
 
 private data class PendingMediaStoreMove(
@@ -43,9 +38,9 @@ val MainViewModel.pendingMediaStoreDeleteIntentSender: StateFlow<IntentSender?>
     get() = mediaStoreMutationState().pendingRequest.asStateFlow()
 
 /**
- * Starts a real MediaStore delete flow. User-owned MediaStore content is never
- * silently deleted: Android's consent UI is requested first, and local DB state
- * is changed only after RESULT_OK.
+ * Stages a user-owned MediaStore item in the private recycle bin and requests
+ * Android's explicit user-consent deletion flow. DB state is not changed until
+ * the platform reports a successful deletion.
  */
 fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
     val state = mediaStoreMutationState()
@@ -76,11 +71,8 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
             } else {
                 try {
                     val deletedRows = context.contentResolver.delete(uri, null, null)
-                    if (deletedRows > 0) {
-                        finalizePendingMediaStoreMove(true)
-                    } else {
-                        throw IOException("MediaStore refused deletion")
-                    }
+                    if (deletedRows > 0) finalizeApprovedMediaStoreMove()
+                    else throw IOException("MediaStore refused deletion")
                 } catch (e: RecoverableSecurityException) {
                     state.pendingRequest.value = e.userAction.actionIntent.intentSender
                 }
@@ -89,13 +81,13 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
             state.pendingMove?.let { try { File(it.trashPath).delete() } catch (_: Exception) {} }
             state.pendingMove = null
             state.pendingRequest.value = null
-            clearGlobalError()
             android.util.Log.e("MediaStoreMutationCompat", "Unable to prepare MediaStore recycle operation", t)
+            throw t
         }
     }
 }
 
-/** Complete the pending MediaStore mutation only after Android reports the user's decision. */
+/** Completes the pending mutation only after Android reports the user's decision. */
 fun MainViewModel.completePendingMediaStoreDelete(userApproved: Boolean) {
     val state = mediaStoreMutationState()
     if (!userApproved) {
@@ -106,36 +98,41 @@ fun MainViewModel.completePendingMediaStoreDelete(userApproved: Boolean) {
     }
 
     viewModelScope.launch {
-        val pending = state.pendingMove ?: return@launch
         try {
-            val context = getApplication<android.app.Application>().applicationContext
-            val uri = Uri.parse(pending.originalPath)
-            val stillPresent = try {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
-            } catch (_: Exception) { false }
-
-            if (stillPresent) {
-                throw IOException("MediaStore item still exists after user-approved deletion")
-            }
-
-            val current = repository.getFileById(pending.file.id)
-                ?: throw IOException("File metadata disappeared during MediaStore deletion")
-            repository.insertFiles(
-                listOf(
-                    current.copy(
-                        path = pending.trashPath,
-                        originalPath = pending.originalPath,
-                        isRecycleBin = true,
-                        deletedTimestampMs = System.currentTimeMillis()
-                    )
-                )
-            )
+            finalizeApprovedMediaStoreMove()
         } catch (t: Throwable) {
             android.util.Log.e("MediaStoreMutationCompat", "Failed to finalize approved MediaStore deletion", t)
-            try { File(pending.trashPath).delete() } catch (_: Exception) {}
-        } finally {
-            state.pendingMove = null
-            state.pendingRequest.value = null
         }
+    }
+}
+
+private suspend fun MainViewModel.finalizeApprovedMediaStoreMove() {
+    val state = mediaStoreMutationState()
+    val pending = state.pendingMove ?: return
+    try {
+        val context = getApplication<android.app.Application>().applicationContext
+        val uri = Uri.parse(pending.originalPath)
+        val stillPresent = try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+        } catch (_: Exception) {
+            false
+        }
+        if (stillPresent) throw IOException("MediaStore item still exists after user-approved deletion")
+
+        val current = repository.getFileById(pending.file.id)
+            ?: throw IOException("File metadata disappeared during MediaStore deletion")
+        repository.insertFiles(
+            listOf(
+                current.copy(
+                    path = pending.trashPath,
+                    originalPath = pending.originalPath,
+                    isRecycleBin = true,
+                    deletedTimestampMs = System.currentTimeMillis()
+                )
+            )
+        )
+    } finally {
+        state.pendingMove = null
+        state.pendingRequest.value = null
     }
 }
