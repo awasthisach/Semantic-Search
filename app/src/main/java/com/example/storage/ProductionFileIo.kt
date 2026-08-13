@@ -164,18 +164,12 @@ object ProductionFileIo {
             }
             if (deleted) Result.success(Unit) else Result.failure(IOException("Document provider refused deletion."))
         } catch (e: SecurityException) {
-            // The caller must surface a system consent request for MediaStore/SAF items.
             Result.failure(IOException("User authorization is required to delete this document.", e))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    /**
-     * Moves a real file into the app-owned recycle bin. For a content URI the source
-     * is copied first and deleted only after the copy succeeds; the database must not
-     * be changed by the caller unless this method returns success.
-     */
     fun moveToRecycleBin(context: Context, source: String): Result<String> {
         val sourceName = if (source.startsWith("content://")) {
             PhysicalStorageManager.getFileNameFromContentUri(context, Uri.parse(source))
@@ -193,11 +187,11 @@ object ProductionFileIo {
             } else {
                 copyLocalToLocal(File(source), trashFile)
             }
-            if (copyResult.isFailure) return Result.failure(copyResult.exceptionOrNull()!!)
+            copyResult.getOrElse { return Result.failure(it) }
             val deleteResult = delete(context, source)
-            if (deleteResult.isFailure) {
+            deleteResult.getOrElse { error ->
                 trashFile.delete()
-                return Result.failure(deleteResult.exceptionOrNull()!!)
+                return Result.failure(error)
             }
             Result.success(trashFile.absolutePath)
         } catch (e: Exception) {
@@ -210,8 +204,6 @@ object ProductionFileIo {
         val trashFile = File(trashPath)
         if (!trashFile.exists() || !trashFile.isFile) return Result.failure(IOException("Recycle-bin source does not exist."))
 
-        // A deleted content:// URI is not a stable restoration destination. Restore to
-        // an app-owned external directory and return the new physical path instead.
         if (originalPath.startsWith("content://")) {
             val target = uniqueDestination(
                 PhysicalStorageManager.getRestoredDir(context),
