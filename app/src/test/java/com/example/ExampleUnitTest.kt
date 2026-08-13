@@ -3,6 +3,8 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.ai.TFLiteSemanticEmbeddingProvider
+import com.example.ui.changeVaultPin
+import com.example.ui.pinError
 import com.example.storage.StorageScanner
 import com.example.data.DuplicateGroup
 import kotlinx.coroutines.FlowPreview

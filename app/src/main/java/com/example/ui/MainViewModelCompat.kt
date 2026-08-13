@@ -87,7 +87,7 @@ fun MainViewModel.appendPinDigit(digit: String) {
             state.vaultUnlocked.value = true
             state.enteredPin.value = ""
         } else {
-            state.pinError.value = "Incorrect PIN"
+            state.pinError.value = "Incorrect PIN. Try again."
             state.enteredPin.value = ""
         }
     }
@@ -115,5 +115,13 @@ fun MainViewModel.onBiometricError(message: String) {
     compatState().pinError.value = message
 }
 
-fun MainViewModel.changeVaultPin(oldPin: String, newPin: String): Boolean =
-    repository.changeVaultPin(oldPin, newPin)
+fun MainViewModel.changeVaultPin(oldPin: String, newPin: String): Boolean {
+    val state = compatState()
+    val success = repository.changeVaultPin(oldPin, newPin)
+    if (success) {
+        state.pinError.value = null
+    } else {
+        state.pinError.value = "Failed to update PIN. Check current PIN."
+    }
+    return success
+}
