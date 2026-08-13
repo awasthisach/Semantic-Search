@@ -5,7 +5,6 @@ plugins {
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
   alias(libs.plugins.detekt)
-  // Firebase Google Services & Crashlytics plugins (Requires app/google-services.json to be added by user)
   alias(libs.plugins.google.services)
   alias(libs.plugins.firebase.crashlytics)
 }
@@ -20,7 +19,6 @@ android {
     targetSdk = 35
     versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
     versionName = project.findProperty("versionName") as String? ?: "1.0"
-
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
@@ -40,7 +38,7 @@ android {
         storeFile = debugKeystoreFile
         storePassword = "android"
         keyAlias = "androiddebugkey"
-        keyPassword = "android"
+        keyPassword = "androiddebugkey"
       }
     }
   }
@@ -51,14 +49,10 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfigs.findByName("release")?.let {
-        signingConfig = it
-      }
+      signingConfigs.findByName("release")?.let { signingConfig = it }
     }
     debug {
-      signingConfigs.findByName("debugConfig")?.let {
-        signingConfig = it
-      }
+      signingConfigs.findByName("debugConfig")?.let { signingConfig = it }
     }
   }
   lint {
@@ -74,28 +68,20 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { 
-    unitTests { 
-      isIncludeAndroidResources = true 
-    } 
-  }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
   }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
-ksp {
-  arg("room.schemaLocation", "$projectDir/schemas")
-}
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
@@ -118,7 +104,6 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.converter.moshi)
-
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.tensorflow.lite)
@@ -157,7 +142,7 @@ dependencies {
 detekt {
   buildUponDefaultConfig = true
   allRules = false
-  ignoreFailures = true
+  ignoreFailures = false
   config.setFrom(file("config/detekt/detekt.yml"))
   baseline = file("detekt-baseline.xml")
 }
