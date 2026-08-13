@@ -22,29 +22,17 @@ class KeystoreVaultManager {
 
     private var fallbackKey: SecretKey? = null
     private val keyStore: KeyStore? by lazy {
-        try {
-            KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        } catch (e: Throwable) {
-            Log.w(TAG, "Android Keystore is unavailable in this runtime: ${e.message}")
-            null
-        }
+        try { KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) } }
+        catch (e: Throwable) { Log.w(TAG, "Android Keystore is unavailable in this runtime: ${e.message}"); null }
     }
 
-    /**
-     * Keystore access is intentionally lazy. Constructing the security manager must not
-     * require Android Keystore to exist; only encryption/decryption operations need it.
-     * This keeps JVM/Robolectric tests deterministic while real Android execution still
-     * prefers the hardware-backed Android Keystore.
-     */
     private fun ensureSecretKeyExists() {
-        if (keyStore != null) {
+        val store = keyStore
+        if (store != null) {
             try {
-                if (!keyStore.containsAlias(KEY_ALIAS)) {
+                if (!store.containsAlias(KEY_ALIAS)) {
                     val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-                    val spec = KeyGenParameterSpec.Builder(
-                        KEY_ALIAS,
-                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                    )
+                    val spec = KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                         .setKeySize(256)
@@ -62,58 +50,45 @@ class KeystoreVaultManager {
                 val keyGen = KeyGenerator.getInstance("AES")
                 keyGen.init(256)
                 fallbackKey = keyGen.generateKey()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to generate fallback key: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "Failed to generate fallback key: ${e.message}") }
         }
     }
 
     private fun getSecretKey(): SecretKey {
         ensureSecretKeyExists()
-        if (keyStore != null) {
+        val store = keyStore
+        if (store != null) {
             try {
-                if (keyStore.containsAlias(KEY_ALIAS)) {
-                    (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }
+                if (store.containsAlias(KEY_ALIAS)) {
+                    (store.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error accessing Android Keystore entry: ${e.message}")
-            }
+            } catch (e: Exception) { Log.w(TAG, "Error accessing Android Keystore entry: ${e.message}") }
         }
         return fallbackKey ?: throw IllegalStateException("No valid SecretKey available")
     }
 
     data class EncryptedResult(val ciphertext: ByteArray, val iv: ByteArray) {
-        override fun equals(other: Any?): Boolean =
-            other is EncryptedResult && ciphertext.contentEquals(other.ciphertext) && iv.contentEquals(other.iv)
+        override fun equals(other: Any?): Boolean = other is EncryptedResult && ciphertext.contentEquals(other.ciphertext) && iv.contentEquals(other.iv)
         override fun hashCode(): Int = 31 * ciphertext.contentHashCode() + iv.contentHashCode()
     }
 
     fun encryptBytes(data: ByteArray): EncryptedResult {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        val secretKey = getSecretKey()
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
         return EncryptedResult(cipher.doFinal(data), cipher.iv)
     }
 
-    fun getEncryptionCipher(): Cipher {
-        return Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, getSecretKey()) }
+    fun getEncryptionCipher(): Cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, getSecretKey()) }
+
+    fun getDecryptionCipher(iv: ByteArray): Cipher = Cipher.getInstance(TRANSFORMATION).apply {
+        init(Cipher.DECRYPT_MODE, getSecretKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
     }
 
-    fun getDecryptionCipher(iv: ByteArray): Cipher {
-        return Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.DECRYPT_MODE, getSecretKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
-        }
-    }
+    fun decryptBytes(ciphertext: ByteArray, iv: ByteArray): ByteArray = getDecryptionCipher(iv).doFinal(ciphertext)
 
-    fun decryptBytes(ciphertext: ByteArray, iv: ByteArray): ByteArray {
-        return getDecryptionCipher(iv).doFinal(ciphertext)
-    }
-
-    /** PBKDF2-HMAC-SHA256 with a random salt and a deliberately expensive work factor. */
     fun hashPin(pin: String): String {
         val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-        val hash = pbkdf2(pin, salt, PBKDF2_ITERATIONS)
-            ?: throw IllegalStateException("PBKDF2 derivation failed")
+        val hash = pbkdf2(pin, salt, PBKDF2_ITERATIONS) ?: throw IllegalStateException("PBKDF2 derivation failed")
         val saltHex = salt.joinToString("") { "%02x".format(it) }
         val hashHex = hash.joinToString("") { "%02x".format(it) }
         return "$PBKDF2_ITERATIONS:$saltHex:$hashHex"
@@ -124,10 +99,7 @@ class KeystoreVaultManager {
         val parts = storedHash.split(":")
         if (parts.size != 3) {
             val legacyHash = hashLegacySha256(inputPin, "VVF_SMART_MANAGER_SALT")
-            return MessageDigest.isEqual(
-                legacyHash.lowercase().toByteArray(Charsets.UTF_8),
-                storedHash.lowercase().toByteArray(Charsets.UTF_8)
-            )
+            return MessageDigest.isEqual(legacyHash.lowercase().toByteArray(Charsets.UTF_8), storedHash.lowercase().toByteArray(Charsets.UTF_8))
         }
         val iterations = parts[0].toIntOrNull() ?: return false
         if (iterations < 10_000 || iterations > 2_000_000) return false
@@ -140,10 +112,7 @@ class KeystoreVaultManager {
     private fun pbkdf2(pin: String, salt: ByteArray, iterations: Int): ByteArray? = try {
         val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iterations, 256)
         javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
-    } catch (e: Exception) {
-        Log.e(TAG, "PBKDF2 failed", e)
-        null
-    }
+    } catch (e: Exception) { Log.e(TAG, "PBKDF2 failed", e); null }
 
     private fun hashLegacySha256(pin: String, salt: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
