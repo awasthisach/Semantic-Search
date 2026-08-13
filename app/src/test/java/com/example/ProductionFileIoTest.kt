@@ -1,5 +1,6 @@
 package com.example
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.storage.ProductionFileIo
@@ -14,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class ProductionFileIoTest {
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
@@ -34,18 +35,14 @@ class ProductionFileIoTest {
         try {
             val source = File(root, "old.txt").apply { writeText("hello") }
             val existing = File(root, "existing.txt").apply { writeText("keep") }
-
             val renamed = ProductionFileIo.rename(context, source.absolutePath, "new.txt")
             assertTrue(renamed.isSuccess)
             assertFalse(source.exists())
             assertEquals("hello", File(renamed.getOrThrow()).readText())
-
             val collision = ProductionFileIo.rename(context, renamed.getOrThrow(), existing.name)
             assertTrue(collision.isFailure)
             assertEquals("keep", existing.readText())
-        } finally {
-            root.deleteRecursively()
-        }
+        } finally { root.deleteRecursively() }
     }
 
     @Test
@@ -55,14 +52,11 @@ class ProductionFileIoTest {
             val source = File(root, "source.bin").apply { writeBytes(ByteArray(4096) { (it % 251).toByte() }) }
             val destination = File(root, "nested/destination.bin")
             val result = ProductionFileIo.copy(context, source.absolutePath, destination.absolutePath)
-
             assertTrue(result.isSuccess)
             assertTrue(source.exists())
             assertTrue(destination.exists())
             assertEquals(source.readBytes().toList(), destination.readBytes().toList())
-        } finally {
-            root.deleteRecursively()
-        }
+        } finally { root.deleteRecursively() }
     }
 
     @Test
@@ -70,18 +64,13 @@ class ProductionFileIoTest {
         val root = File(context.cacheDir, "physical-trash-test-${System.nanoTime()}").apply { mkdirs() }
         try {
             val source = File(root, "important.txt").apply { writeText("important data") }
-            val moved = com.example.storage.ProductionFileIo.moveToRecycleBin(context, source.absolutePath)
+            val moved = ProductionFileIo.moveToRecycleBin(context, source.absolutePath)
             assertTrue(moved.isSuccess)
             assertFalse(source.exists())
             val trash = File(moved.getOrThrow())
             assertTrue(trash.exists())
-
             val restoredTarget = File(root, "restored.txt")
-            val restored = com.example.storage.ProductionFileIo.restoreFromRecycleBin(
-                context,
-                trash.absolutePath,
-                restoredTarget.absolutePath
-            )
+            val restored = ProductionFileIo.restoreFromRecycleBin(context, trash.absolutePath, restoredTarget.absolutePath)
             assertTrue(restored.isSuccess)
             assertFalse(trash.exists())
             assertTrue(restoredTarget.exists())
