@@ -15,12 +15,8 @@ private class VmCompatState {
 }
 
 private val compatStates = WeakHashMap<MainViewModel, VmCompatState>()
-private fun MainViewModel.compatState(): VmCompatState = synchronized(compatStates) {
-    compatStates.getOrPut(this) { VmCompatState() }
-}
-
-private fun <T> Flow<T>.stateInCompat(vm: MainViewModel, initial: T): StateFlow<T> =
-    stateIn(vm.viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
+private fun MainViewModel.compatState(): VmCompatState = synchronized(compatStates) { compatStates.getOrPut(this) { VmCompatState() } }
+private fun <T> Flow<T>.stateInCompat(vm: MainViewModel, initial: T): StateFlow<T> = stateIn(vm.viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
 
 val MainViewModel.filteredFiles: StateFlow<List<FileItemEntity>> get() = files
 val MainViewModel.categoryStats: StateFlow<List<CategoryStat>> get() = dashboardStats
@@ -41,33 +37,12 @@ val MainViewModel.isVaultUnlocked: StateFlow<Boolean> get() = compatState().vaul
 val MainViewModel.enteredPin: StateFlow<String> get() = compatState().enteredPin
 val MainViewModel.pinError: StateFlow<String?> get() = compatState().pinError
 
-val MainViewModel.semanticSearchResults: StateFlow<List<FileItemEntity>> get() =
-    semanticQuery.debounce(200).flatMapLatest { repository.searchSemanticFiles(it) }
-        .stateInCompat(this, emptyList())
+val MainViewModel.semanticSearchResults: StateFlow<List<FileItemEntity>> get() = semanticQuery.debounce(200).flatMapLatest { repository.searchSemanticFiles(it) }.stateInCompat(this, emptyList())
 
 fun MainViewModel.startDuplicateScan() { repository.startIncrementalDuplicateScan() }
-
-fun MainViewModel.toggleDuplicateSelection(id: Long) {
-    val state = compatState()
-    state.selectedIds.value = state.selectedIds.value.toMutableSet().apply {
-        if (!add(id)) remove(id)
-    }
-}
-
-fun MainViewModel.autoSelectExtraDuplicates() {
-    val groups = level1ExactDuplicates.value + level3VisualDuplicates.value + videoDuplicates.value + semanticDuplicates.value + documentDuplicates.value
-    compatState().selectedIds.value = groups.flatMap { it.files.drop(1).map { file -> file.id } }.toSet()
-}
-
-fun MainViewModel.cleanSelectedDuplicates() {
-    val ids = selectedDuplicateIds.value
-    if (ids.isEmpty()) return
-    viewModelScope.launch {
-        repository.cleanSelectedDuplicates(ids)
-        compatState().selectedIds.value = emptySet()
-    }
-}
-
+fun MainViewModel.toggleDuplicateSelection(id: Long) { val state = compatState(); state.selectedIds.value = state.selectedIds.value.toMutableSet().apply { if (!add(id)) remove(id) } }
+fun MainViewModel.autoSelectExtraDuplicates() { val groups = level1ExactDuplicates.value + level3VisualDuplicates.value + videoDuplicates.value + semanticDuplicates.value + documentDuplicates.value; compatState().selectedIds.value = groups.flatMap { it.files.drop(1).map { file -> file.id } }.toSet() }
+fun MainViewModel.cleanSelectedDuplicates() { val ids = selectedDuplicateIds.value; if (ids.isEmpty()) return; viewModelScope.launch { repository.cleanSelectedDuplicates(ids); compatState().selectedIds.value = emptySet() } }
 fun MainViewModel.moveToRecycleBin(file: FileItemEntity) { requestMoveToRecycleBin(file) }
 fun MainViewModel.restoreFromRecycleBin(file: FileItemEntity) { viewModelScope.launch { repository.restoreFromRecycleBin(file) } }
 fun MainViewModel.deletePermanently(file: FileItemEntity) { viewModelScope.launch { repository.deletePermanently(file) } }
@@ -83,7 +58,7 @@ fun MainViewModel.appendPinDigit(digit: String) {
     state.enteredPin.value = pin
     state.pinError.value = null
     if (pin.length == 4) {
-        if (repository.verifyVaultPin(pin, repository.getStoredVaultPinHash())) {
+        if (repository.verifyVaultPin(pin)) {
             state.vaultUnlocked.value = true
             state.enteredPin.value = ""
         } else {
@@ -93,35 +68,13 @@ fun MainViewModel.appendPinDigit(digit: String) {
     }
 }
 
-fun MainViewModel.clearPinDigit() {
-    val state = compatState()
-    state.enteredPin.value = state.enteredPin.value.dropLast(1)
-    state.pinError.value = null
-}
-
-fun MainViewModel.lockVault() {
-    val state = compatState()
-    state.vaultUnlocked.value = false
-    state.enteredPin.value = ""
-    state.pinError.value = null
-}
-
-fun MainViewModel.onBiometricSuccess() {
-    compatState().vaultUnlocked.value = true
-    compatState().pinError.value = null
-}
-
-fun MainViewModel.onBiometricError(message: String) {
-    compatState().pinError.value = message
-}
-
+fun MainViewModel.clearPinDigit() { val state = compatState(); state.enteredPin.value = state.enteredPin.value.dropLast(1); state.pinError.value = null }
+fun MainViewModel.lockVault() { val state = compatState(); state.vaultUnlocked.value = false; state.enteredPin.value = ""; state.pinError.value = null }
+fun MainViewModel.onBiometricSuccess() { compatState().vaultUnlocked.value = true; compatState().pinError.value = null }
+fun MainViewModel.onBiometricError(message: String) { compatState().pinError.value = message }
 fun MainViewModel.changeVaultPin(oldPin: String, newPin: String): Boolean {
     val state = compatState()
     val success = repository.changeVaultPin(oldPin, newPin)
-    if (success) {
-        state.pinError.value = null
-    } else {
-        state.pinError.value = "Failed to update PIN. Check current PIN."
-    }
+    if (success) state.pinError.value = null else state.pinError.value = "Failed to update PIN. Check current PIN."
     return success
 }
