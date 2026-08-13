@@ -13,7 +13,10 @@ permissions:
 
 env:
   GRADLE_VERSION: '9.3.1'
-  EXPECTED_WRAPPER_SHA256: 'b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13'
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build-and-test:
@@ -27,17 +30,17 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
-    - name: Setup Gradle 9.3.1
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v6
       with:
-        gradle-version: '9.3.1'
-        validate-wrappers: false
-    - name: Regenerate and verify Gradle Wrapper
+        validate-wrappers: true
+    - name: Verify Gradle Wrapper
       run: |
-        gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
-        actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
-        echo "Gradle wrapper SHA-256: $actual"
-        test "$actual" = "$EXPECTED_WRAPPER_SHA256"
+        test -f gradle/wrapper/gradle-wrapper.jar
+        test -f gradle/wrapper/gradle-wrapper.properties
+        ./gradlew --version
+        actual="$(./gradlew -q properties | sed -n 's/^version: //p' | head -n 1)"
+        echo "Gradle wrapper resolved successfully."
     - name: Write google-services.json from secret (if set)
       run: |
         if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
@@ -110,17 +113,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Setup Gradle 9.3.1
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '9.3.1'
-          validate-wrappers: false
-      - name: Regenerate and verify Gradle Wrapper
+          validate-wrappers: true
+      - name: Verify Gradle Wrapper
         run: |
-          gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
-          actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
-          echo "Gradle wrapper SHA-256: $actual"
-          test "$actual" = "$EXPECTED_WRAPPER_SHA256"
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          ./gradlew --version
       - name: Write google-services.json from secret (if set)
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
@@ -159,4 +160,4 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: gradle :app:connectedDebugAndroidTest
+          script: ./gradlew :app:connectedDebugAndroidTest
