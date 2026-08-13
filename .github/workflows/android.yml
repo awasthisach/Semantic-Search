@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+env:
+  GRADLE_VERSION: '9.3.1'
+  EXPECTED_WRAPPER_SHA256: 'b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13'
+
 jobs:
   build-and-test:
     name: Build & Test Android App
@@ -26,14 +30,17 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Gradle from project wrapper
+    - name: Setup Gradle 9.3.1
       uses: gradle/actions/setup-gradle@v6
       with:
-        gradle-version: 'wrapper'
-        validate-wrappers: true
+        gradle-version: '9.3.1'
 
-    - name: Validate Gradle Wrapper
-      uses: gradle/actions/wrapper-validation@v6
+    - name: Regenerate and verify Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
+        actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
+        echo "Gradle wrapper SHA-256: $actual"
+        test "$actual" = "$EXPECTED_WRAPPER_SHA256"
 
     - name: Write google-services.json from secret (if set)
       run: |
@@ -119,14 +126,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle from project wrapper
+      - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: 'wrapper'
-          validate-wrappers: true
+          gradle-version: '9.3.1'
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v6
+      - name: Regenerate and verify Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
+          actual="$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')"
+          echo "Gradle wrapper SHA-256: $actual"
+          test "$actual" = "$EXPECTED_WRAPPER_SHA256"
 
       - name: Write google-services.json from secret (if set)
         run: |
@@ -135,13 +145,13 @@ jobs:
           fi
 
       - name: Verify google-services.json exists
-        run: |
-          if [ -f app/google-services.json ]; then
-            test -s app/google-services.json
-          else
-            echo "ERROR: app/google-services.json not found! Firebase requires google-services.json."
-            exit 1
-          fi
+      run: |
+        if [ -f app/google-services.json ]; then
+          test -s app/google-services.json
+        else
+          echo "ERROR: app/google-services.json not found! Firebase requires google-services.json."
+          exit 1
+        fi
 
       - name: Create .env File
         run: |
