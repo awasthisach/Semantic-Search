@@ -72,7 +72,7 @@ object ProductionFileIo {
         if (source.renameTo(destination)) return Result.success(destination.absolutePath)
 
         return try {
-            copyLocalToLocal(source, destination)
+            copyLocalToLocal(source, destination).getOrThrow()
             if (source.delete()) Result.success(destination.absolutePath)
             else {
                 destination.delete()
@@ -95,7 +95,7 @@ object ProductionFileIo {
                 if (!src.exists() || !src.isFile) return Result.failure(IOException("Source file does not exist."))
                 if (dst.exists()) return Result.failure(IOException("Destination already exists."))
                 dst.parentFile?.mkdirs()
-                copyLocalToLocal(src, dst)
+                copyLocalToLocal(src, dst).getOrThrow()
                 Result.success(dst.absolutePath)
             } catch (e: Exception) {
                 Result.failure(e)
@@ -186,14 +186,9 @@ object ProductionFileIo {
             } else {
                 copyLocalToLocal(File(source), trashFile)
             }
-            if (copyResult.isFailure) {
-                return Result.failure(copyResult.exceptionOrNull() ?: IOException("Unable to copy source into recycle bin."))
-            }
+            copyResult.getOrThrow()
             val deleteResult = delete(context, source)
-            if (deleteResult.isFailure) {
-                trashFile.delete()
-                return Result.failure(deleteResult.exceptionOrNull() ?: IOException("Unable to delete original after recycle-bin copy."))
-            }
+            deleteResult.getOrThrow()
             Result.success(trashFile.absolutePath)
         } catch (e: Exception) {
             trashFile.delete()
@@ -211,7 +206,7 @@ object ProductionFileIo {
                 trashFile.name.substringAfter('_', trashFile.name)
             )
             return try {
-                copyLocalToLocal(trashFile, target)
+                copyLocalToLocal(trashFile, target).getOrThrow()
                 if (!trashFile.delete()) {
                     target.delete()
                     Result.failure(IOException("Restored copy created but recycle-bin source could not be removed."))
@@ -227,7 +222,7 @@ object ProductionFileIo {
         target.parentFile?.let { if (!it.exists() && !it.mkdirs()) return Result.failure(IOException("Unable to create restore directory.")) }
         return try {
             if (trashFile.renameTo(target)) return Result.success(target.absolutePath)
-            copyLocalToLocal(trashFile, target)
+            copyLocalToLocal(trashFile, target).getOrThrow()
             if (trashFile.delete()) Result.success(target.absolutePath)
             else {
                 target.delete()
@@ -255,12 +250,24 @@ object ProductionFileIo {
         }
     }
 
-    private fun copyLocalToLocal(source: File, destination: File) {
-        if (!source.exists() || !source.isFile) throw IOException("Source file does not exist.")
-        if (destination.exists()) throw IOException("Destination already exists.")
-        destination.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IOException("Unable to create destination directory.") }
-        FileInputStream(source).use { input -> FileOutputStream(destination).use { output -> copyStream(input, output) } }
-        if (destination.length() != source.length()) throw IOException("Copy verification failed: size mismatch.")
+    private fun copyLocalToLocal(source: File, destination: File): Result<String> {
+        return try {
+            if (!source.exists() || !source.isFile) return Result.failure(IOException("Source file does not exist."))
+            if (destination.exists()) return Result.failure(IOException("Destination already exists."))
+            destination.parentFile?.let {
+                if (!it.exists() && !it.mkdirs()) return Result.failure(IOException("Unable to create destination directory."))
+            }
+            FileInputStream(source).use { input -> FileOutputStream(destination).use { output -> copyStream(input, output) } }
+            if (destination.length() != source.length()) {
+                destination.delete()
+                Result.failure(IOException("Copy verification failed: size mismatch."))
+            } else {
+                Result.success(destination.absolutePath)
+            }
+        } catch (e: Exception) {
+            destination.delete()
+            Result.failure(e)
+        }
     }
 
     private fun copyStream(input: InputStream, output: OutputStream) {
