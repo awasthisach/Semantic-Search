@@ -83,6 +83,7 @@ jobs:
           echo "HAS_KEYSTORE=false" >> "$GITHUB_ENV"
         fi
     - name: Build Release AAB
+      if: env.HAS_KEYSTORE == 'true'
       env:
         KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
         STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
