@@ -2,6 +2,8 @@ package com.example.ui
 
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.WeakHashMap
@@ -37,7 +39,12 @@ val MainViewModel.isVaultUnlocked: StateFlow<Boolean> get() = compatState().vaul
 val MainViewModel.enteredPin: StateFlow<String> get() = compatState().enteredPin
 val MainViewModel.pinError: StateFlow<String?> get() = compatState().pinError
 
-val MainViewModel.semanticSearchResults: StateFlow<List<FileItemEntity>> get() = semanticQuery.debounce(200).flatMapLatest { repository.searchSemanticFiles(it) }.stateInCompat(this, emptyList())
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+val MainViewModel.semanticSearchResults: StateFlow<List<FileItemEntity>>
+    get() = semanticQuery
+        .debounce(200)
+        .flatMapLatest { repository.searchSemanticFiles(it) }
+        .stateInCompat(this, emptyList())
 
 fun MainViewModel.startDuplicateScan() { repository.startIncrementalDuplicateScan() }
 fun MainViewModel.toggleDuplicateSelection(id: Long) { val state = compatState(); state.selectedIds.value = state.selectedIds.value.toMutableSet().apply { if (!add(id)) remove(id) } }
