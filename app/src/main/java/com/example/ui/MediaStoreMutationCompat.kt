@@ -100,7 +100,10 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
     }
 }
 
-/** Android 10 requires the RecoverableSecurityException consent mechanism. */
+/**
+ * Android 10 (API 29) uses RecoverableSecurityException for user-owned
+ * MediaStore items; API 30+ uses MediaStore.createDeleteRequest().
+ */
 @RequiresApi(Build.VERSION_CODES.Q)
 private suspend fun MainViewModel.deleteMediaStoreOnAndroid10(
     context: android.content.Context,
