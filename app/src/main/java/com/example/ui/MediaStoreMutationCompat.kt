@@ -6,6 +6,7 @@ import android.app.RecoverableSecurityException
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.viewModelScope
 import com.example.data.FileItemEntity
 import com.example.storage.MediaStoreMutationManager
@@ -65,28 +66,29 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
 
             state.pendingMove = PendingMediaStoreMove(file, trashFile.absolutePath, file.path)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val request = MediaStoreMutationManager.createDeleteRequest(context, listOf(uri))
-                state.pendingRequest.value = request.intentSender
-                request.send(context, 0, null, object : PendingIntent.OnFinished {
-                    override fun onSendFinished(
-                        pendingIntent: PendingIntent?,
-                        intent: android.content.Intent?,
-                        resultCode: Int,
-                        resultData: String?,
-                        resultExtras: android.os.Bundle?
-                    ) {
-                        completePendingMediaStoreDelete(resultCode == Activity.RESULT_OK)
-                    }
-                }, null)
-            } else {
-                try {
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    val request = MediaStoreMutationManager.createDeleteRequest(context, listOf(uri))
+                    state.pendingRequest.value = request.intentSender
+                    request.send(context, 0, null, object : PendingIntent.OnFinished {
+                        override fun onSendFinished(
+                            pendingIntent: PendingIntent?,
+                            intent: android.content.Intent?,
+                            resultCode: Int,
+                            resultData: String?,
+                            resultExtras: android.os.Bundle?
+                        ) {
+                            completePendingMediaStoreDelete(resultCode == Activity.RESULT_OK)
+                        }
+                    }, null)
+                }
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+                    deleteMediaStoreOnAndroid10(context, uri, state)
+                }
+                else -> {
                     val deletedRows = context.contentResolver.delete(uri, null, null)
                     if (deletedRows > 0) finalizeApprovedMediaStoreMove()
                     else throw IOException("MediaStore refused deletion")
-                } catch (e: RecoverableSecurityException) {
-                    state.pendingRequest.value = e.userAction.actionIntent.intentSender
-                    throw IOException("Android 10 requires the Activity consent flow for this MediaStore item", e)
                 }
             }
         } catch (t: Throwable) {
@@ -95,6 +97,26 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
             state.pendingRequest.value = null
             android.util.Log.e("MediaStoreMutationCompat", "Unable to prepare MediaStore recycle operation", t)
         }
+    }
+}
+
+/** Android 10 requires the RecoverableSecurityException consent mechanism. */
+@RequiresApi(Build.VERSION_CODES.Q)
+private suspend fun MainViewModel.deleteMediaStoreOnAndroid10(
+    context: android.content.Context,
+    uri: Uri,
+    state: MediaStoreMutationState
+) {
+    try {
+        val deletedRows = context.contentResolver.delete(uri, null, null)
+        if (deletedRows > 0) finalizeApprovedMediaStoreMove()
+        else throw IOException("MediaStore refused deletion")
+    } catch (e: RecoverableSecurityException) {
+        state.pendingRequest.value = e.userAction.actionIntent.intentSender
+        android.util.Log.i(
+            "MediaStoreMutationCompat",
+            "Android 10 requires user consent before deleting MediaStore item"
+        )
     }
 }
 
