@@ -1,6 +1,7 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.gradle.api.tasks.testing.Test
+import javax.xml.parsers.DocumentBuilderFactory
 
 plugins {
   alias(libs.plugins.android.application)
@@ -106,7 +107,7 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.biometric)
-  implementation(libs.androidx.security.crypto)
+  implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -223,4 +224,38 @@ tasks.register<JacocoReport>("jacocoDebugAndroidTestReport") {
   executionData.setFrom(fileTree(layout.buildDirectory) {
     include("outputs/code_coverage/debugAndroidTest/connected/**/*.ec")
   })
+}
+
+fun coverageTotals(report: File): Pair<Long, Long> {
+  if (!report.exists()) return 0L to 0L
+  val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }
+    .newDocumentBuilder().parse(report)
+  val counters = document.getElementsByTagName("counter")
+  var covered = 0L
+  var missed = 0L
+  for (i in 0 until counters.length) {
+    val node = counters.item(i)
+    if (node.attributes.getNamedItem("type")?.nodeValue == "INSTRUCTION") {
+      covered += node.attributes.getNamedItem("covered")?.nodeValue?.toLongOrNull() ?: 0L
+      missed += node.attributes.getNamedItem("missed")?.nodeValue?.toLongOrNull() ?: 0L
+    }
+  }
+  return covered to missed
+}
+
+tasks.register("verifyAggregateCoverage") {
+  group = "verification"
+  description = "Require aggregate JVM + instrumented instruction coverage to be at least 80%."
+  dependsOn("jacocoDebugUnitTestReport", "jacocoDebugAndroidTestReport")
+  doLast {
+    val reports = listOf(
+      layout.buildDirectory.file("reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml").get().asFile,
+      layout.buildDirectory.file("reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml").get().asFile
+    )
+    val totals = reports.map(::coverageTotals).reduce { a, b -> (a.first + b.first) to (a.second + b.second) }
+    val total = totals.first + totals.second
+    val percent = if (total == 0L) 0.0 else totals.first * 100.0 / total
+    logger.lifecycle("Aggregate instruction coverage: %.2f%% (%d covered / %d total)".format(percent, totals.first, total))
+    check(percent >= 80.0) { "Aggregate instruction coverage %.2f%% is below required 80%%.".format(percent) }
+  }
 }
