@@ -45,7 +45,6 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 tensorflowLite = "2.16.1"
 textRecognition = "16.0.1"
-
 documentfile = "1.0.1"
 detekt = "1.23.8"
 workRuntimeKtx = "2.9.1"
@@ -120,7 +119,7 @@ leakcanary-android = { group = "com.squareup.leakcanary", name = "leakcanary-and
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = googleDevtoolsKsp" }
+google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "googleDevtoolsKsp" }
 roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
 secrets = { id = "com.google.android.libraries.mapsplatform.secrets-gradle-plugin", version.ref = "secretsGradlePlugin" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
