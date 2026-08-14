@@ -87,13 +87,13 @@ jobs:
         export KEYSTORE_PATH="${{ github.workspace }}/release.keystore"
         ./gradlew :app:bundleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
     - name: Upload Debug APK Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
     - name: Upload Release AAB Artifact
       if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-aab
         path: app/build/outputs/bundle/release/app-release.aab
