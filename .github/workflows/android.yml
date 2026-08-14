@@ -65,6 +65,25 @@ jobs:
         fi
     - name: Run Unit Tests
       run: ./gradlew :app:testDebugUnitTest
+    - name: Generate JVM/Robolectric Coverage
+      run: ./gradlew :app:jacocoDebugUnitTestReport
+    - name: Publish JVM/Robolectric Coverage Summary
+      run: |
+        python3 - <<'PY'
+        import xml.etree.ElementTree as ET
+        from pathlib import Path
+        report = Path('app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml')
+        root = ET.parse(report).getroot()
+        line = next((c for c in root.findall('counter') if c.attrib.get('type') == 'LINE'), None)
+        if line is None:
+            raise SystemExit('LINE coverage counter missing')
+        missed = int(line.attrib['missed'])
+        covered = int(line.attrib['covered'])
+        pct = covered * 100 / (covered + missed) if covered + missed else 0
+        print(f'JVM/Robolectric line coverage: {pct:.2f}% ({covered}/{covered + missed})')
+        with open(Path(__import__('os').environ['GITHUB_STEP_SUMMARY']), 'a') as f:
+            f.write(f'## JVM/Robolectric Coverage\n\n**Line coverage: {pct:.2f}%** ({covered}/{covered + missed})\n')
+        PY
     - name: Run Lint
       run: ./gradlew :app:lintDebug
     - name: Run Detekt
@@ -91,6 +110,11 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+    - name: Upload JVM/Robolectric Coverage Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-jvm-robolectric
+        path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
     - name: Upload Release AAB Artifact
       if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
       uses: actions/upload-artifact@v4
@@ -156,3 +180,27 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
           script: ./gradlew :app:connectedDebugAndroidTest
+      - name: Generate Instrumented Coverage
+        run: ./gradlew :app:jacocoDebugAndroidTestReport
+      - name: Publish Instrumented Coverage Summary
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          report = Path('app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml')
+          root = ET.parse(report).getroot()
+          line = next((c for c in root.findall('counter') if c.attrib.get('type') == 'LINE'), None)
+          if line is None:
+              raise SystemExit('LINE coverage counter missing')
+          missed = int(line.attrib['missed'])
+          covered = int(line.attrib['covered'])
+          pct = covered * 100 / (covered + missed) if covered + missed else 0
+          print(f'Instrumented Android line coverage: {pct:.2f}% ({covered}/{covered + missed})')
+          with open(Path(__import__('os').environ['GITHUB_STEP_SUMMARY']), 'a') as f:
+              f.write(f'## Instrumented Android Coverage\n\n**Line coverage: {pct:.2f}%** ({covered}/{covered + missed})\n')
+          PY
+      - name: Upload Instrumented Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-instrumented-android
+          path: app/build/reports/jacoco/jacocoDebugAndroidTestReport/
