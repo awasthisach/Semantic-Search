@@ -7,6 +7,7 @@ import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.annotation.SuppressLint
 import androidx.lifecycle.viewModelScope
 import com.example.data.FileItemEntity
 import com.example.storage.MediaStoreMutationManager
@@ -105,6 +106,7 @@ fun MainViewModel.requestMoveToRecycleBin(file: FileItemEntity) {
  * MediaStore items; API 30+ uses MediaStore.createDeleteRequest().
  */
 @RequiresApi(Build.VERSION_CODES.Q)
+@SuppressLint("NewApi")
 private suspend fun MainViewModel.deleteMediaStoreOnAndroid10(
     context: android.content.Context,
     uri: Uri,
