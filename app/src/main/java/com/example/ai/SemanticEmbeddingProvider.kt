@@ -125,21 +125,36 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
         interpreter = null; vocabMap = null; false
     }
 
-    fun loadModelFromAssets(context: Context, assetName: String = "mobile_clip_embedding.tflite", vocabAsset: String = "mobile_clip_vocab.txt"): Boolean = try {
-        val vocabExists = try { context.assets.open(vocabAsset).use { true } } catch (_: Exception) { false }
-        val modelExists = try { context.assets.open(assetName).use { true } } catch (_: Exception) { false }
-        if (!vocabExists || !modelExists) { interpreter = null; vocabMap = null; return false }
-        val map = mutableMapOf<String, Int>()
-        context.assets.open(vocabAsset).bufferedReader().useLines { lines -> lines.forEachIndexed { index, line -> line.trim().takeIf { it.isNotEmpty() }?.let { map[it] = index } } }
-        if (map.isEmpty()) return false
-        val bytes = context.assets.open(assetName).use { it.readBytes() }
-        val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply { put(bytes); rewind() }
-        if (!loadModelFromBuffer(buffer)) return false
-        vocabMap = map
-        true
-    } catch (e: Throwable) {
-        Log.i("TFLiteSemantic", "TFLite model or vocab asset unavailable: ${e.message}")
-        interpreter = null; vocabMap = null; false
+    fun loadModelFromAssets(context: Context, assetName: String = "mobile_clip_embedding.tflite", vocabAsset: String = "mobile_clip_vocab.txt"): Boolean {
+        return try {
+            val vocabExists = try { context.assets.open(vocabAsset).use { true } } catch (_: Exception) { false }
+            val modelExists = try { context.assets.open(assetName).use { true } } catch (_: Exception) { false }
+            if (!vocabExists || !modelExists) {
+                interpreter = null
+                vocabMap = null
+                return false
+            }
+            val map = mutableMapOf<String, Int>()
+            context.assets.open(vocabAsset).bufferedReader().useLines { lines ->
+                lines.forEachIndexed { index, line ->
+                    line.trim().takeIf { it.isNotEmpty() }?.let { map[it] = index }
+                }
+            }
+            if (map.isEmpty()) return false
+            val bytes = context.assets.open(assetName).use { it.readBytes() }
+            val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
+                put(bytes)
+                rewind()
+            }
+            if (!loadModelFromBuffer(buffer)) return false
+            vocabMap = map
+            true
+        } catch (e: Throwable) {
+            Log.i("TFLiteSemantic", "TFLite model or vocab asset unavailable: ${e.message}")
+            interpreter = null
+            vocabMap = null
+            false
+        }
     }
 
     fun loadModelFromBuffer(buffer: ByteBuffer): Boolean = try {
