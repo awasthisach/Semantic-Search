@@ -70,19 +70,40 @@ jobs:
     - name: Publish JVM/Robolectric Coverage Summary
       run: |
         python3 - <<'PY'
+        import os
         import xml.etree.ElementTree as ET
         from pathlib import Path
+
         report = Path('app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml')
+        if not report.is_file():
+            raise SystemExit(f'JaCoCo report not found: {report}')
+
         root = ET.parse(report).getroot()
-        line = next((c for c in root.findall('counter') if c.attrib.get('type') == 'LINE'), None)
+        counters = {c.attrib.get('type'): c for c in root.iter('counter')}
+        line = counters.get('LINE')
         if line is None:
-            raise SystemExit('LINE coverage counter missing')
-        missed = int(line.attrib['missed'])
-        covered = int(line.attrib['covered'])
-        pct = covered * 100 / (covered + missed) if covered + missed else 0
-        print(f'JVM/Robolectric line coverage: {pct:.2f}% ({covered}/{covered + missed})')
-        with open(Path(__import__('os').environ['GITHUB_STEP_SUMMARY']), 'a') as f:
-            f.write(f'## JVM/Robolectric Coverage\n\n**Line coverage: {pct:.2f}%** ({covered}/{covered + missed})\n')
+            available = ', '.join(sorted(k for k in counters if k)) or 'none'
+            raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
+
+        def pct(counter):
+            missed = int(counter.attrib['missed'])
+            covered = int(counter.attrib['covered'])
+            total = covered + missed
+            return (covered * 100 / total if total else 0.0), covered, total
+
+        line_pct, line_covered, line_total = pct(line)
+        instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
+        branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
+        print(f'JVM/Robolectric line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
+        print(f'JVM/Robolectric instruction coverage: {instruction_pct:.2f}%')
+        print(f'JVM/Robolectric branch coverage: {branch_pct:.2f}%')
+
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+            f.write('## JVM/Robolectric Coverage\n\n')
+            f.write(f'| Metric | Coverage |\n|---|---:|\n')
+            f.write(f'| Line | {line_pct:.2f}% ({line_covered}/{line_total}) |\n')
+            f.write(f'| Instruction | {instruction_pct:.2f}% |\n')
+            f.write(f'| Branch | {branch_pct:.2f}% |\n')
         PY
     - name: Run Lint
       run: ./gradlew :app:lintDebug
@@ -185,19 +206,40 @@ jobs:
       - name: Publish Instrumented Coverage Summary
         run: |
           python3 - <<'PY'
+          import os
           import xml.etree.ElementTree as ET
           from pathlib import Path
+
           report = Path('app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml')
+          if not report.is_file():
+              raise SystemExit(f'JaCoCo report not found: {report}')
+
           root = ET.parse(report).getroot()
-          line = next((c for c in root.findall('counter') if c.attrib.get('type') == 'LINE'), None)
+          counters = {c.attrib.get('type'): c for c in root.iter('counter')}
+          line = counters.get('LINE')
           if line is None:
-              raise SystemExit('LINE coverage counter missing')
-          missed = int(line.attrib['missed'])
-          covered = int(line.attrib['covered'])
-          pct = covered * 100 / (covered + missed) if covered + missed else 0
-          print(f'Instrumented Android line coverage: {pct:.2f}% ({covered}/{covered + missed})')
-          with open(Path(__import__('os').environ['GITHUB_STEP_SUMMARY']), 'a') as f:
-              f.write(f'## Instrumented Android Coverage\n\n**Line coverage: {pct:.2f}%** ({covered}/{covered + missed})\n')
+              available = ', '.join(sorted(k for k in counters if k)) or 'none'
+              raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
+
+          def pct(counter):
+              missed = int(counter.attrib['missed'])
+              covered = int(counter.attrib['covered'])
+              total = covered + missed
+              return (covered * 100 / total if total else 0.0), covered, total
+
+          line_pct, line_covered, line_total = pct(line)
+          instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
+          branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
+          print(f'Instrumented Android line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
+          print(f'Instrumented Android instruction coverage: {instruction_pct:.2f}%')
+          print(f'Instrumented Android branch coverage: {branch_pct:.2f}%')
+
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write('## Instrumented Android Coverage\n\n')
+              f.write('| Metric | Coverage |\n|---|---:|\n')
+              f.write(f'| Line | {line_pct:.2f}% ({line_covered}/{line_total}) |\n')
+              f.write(f'| Instruction | {instruction_pct:.2f}% |\n')
+              f.write(f'| Branch | {branch_pct:.2f}% |\n')
           PY
       - name: Upload Instrumented Coverage Artifact
         uses: actions/upload-artifact@v4
