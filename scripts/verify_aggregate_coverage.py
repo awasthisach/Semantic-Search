@@ -3,19 +3,19 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Current verified baselines. These are deliberately non-regression gates;
-# the long-term production target is higher and will be raised as real tests
-# are added. The two reports are kept separate because they exercise the same
-# production classes through different runtimes and must not be double-counted.
-MIN_JVM_INSTRUCTION = 2.55
-MIN_INSTRUMENTED_INSTRUCTION = 23.86
+# Verified line-coverage baselines. These are non-regression gates for the
+# current CI surface; the long-term production target is substantially higher
+# and will be raised as meaningful tests are added. Keep the metric identical
+# to the published coverage summaries so the gate never compares unlike data.
+MIN_JVM_LINE = 2.55
+MIN_INSTRUMENTED_LINE = 23.86
 
 
-def instruction_totals(path: Path):
+def line_totals(path: Path):
     root = ET.parse(path).getroot()
-    counter = root.find("./counter[@type='INSTRUCTION']")
+    counter = root.find("./counter[@type='LINE']")
     if counter is None:
-        raise RuntimeError(f"Report-level INSTRUCTION counter missing in {path}")
+        raise RuntimeError(f"Report-level LINE counter missing in {path}")
     return int(counter.attrib["covered"]), int(counter.attrib["missed"])
 
 
@@ -30,34 +30,34 @@ def main():
             "usage: verify_aggregate_coverage.py <jvm-report.xml> <instrumented-report.xml>"
         )
 
-    jvm = instruction_totals(Path(sys.argv[1]))
-    instrumented = instruction_totals(Path(sys.argv[2]))
+    jvm = line_totals(Path(sys.argv[1]))
+    instrumented = line_totals(Path(sys.argv[2]))
     jvm_pct = percentage(*jvm)
     instrumented_pct = percentage(*instrumented)
 
     print(
-        f"JVM/Robolectric instruction coverage: {jvm_pct:.2f}% "
+        f"JVM/Robolectric line coverage: {jvm_pct:.2f}% "
         f"({jvm[0]}/{jvm[0] + jvm[1]})"
     )
     print(
-        f"Instrumented Android instruction coverage: {instrumented_pct:.2f}% "
+        f"Instrumented Android line coverage: {instrumented_pct:.2f}% "
         f"({instrumented[0]}/{instrumented[0] + instrumented[1]})"
     )
     print(
         "Coverage baselines: "
-        f"JVM >= {MIN_JVM_INSTRUCTION:.2f}%, "
-        f"instrumented >= {MIN_INSTRUMENTED_INSTRUCTION:.2f}%"
+        f"JVM >= {MIN_JVM_LINE:.2f}%, "
+        f"instrumented >= {MIN_INSTRUMENTED_LINE:.2f}%"
     )
 
     failures = []
-    if jvm_pct < MIN_JVM_INSTRUCTION:
+    if jvm_pct < MIN_JVM_LINE:
         failures.append(
-            f"JVM coverage regressed: {jvm_pct:.2f}% < {MIN_JVM_INSTRUCTION:.2f}%"
+            f"JVM line coverage regressed: {jvm_pct:.2f}% < {MIN_JVM_LINE:.2f}%"
         )
-    if instrumented_pct < MIN_INSTRUMENTED_INSTRUCTION:
+    if instrumented_pct < MIN_INSTRUMENTED_LINE:
         failures.append(
-            "Instrumented coverage regressed: "
-            f"{instrumented_pct:.2f}% < {MIN_INSTRUMENTED_INSTRUCTION:.2f}%"
+            "Instrumented line coverage regressed: "
+            f"{instrumented_pct:.2f}% < {MIN_INSTRUMENTED_LINE:.2f}%"
         )
 
     if failures:
