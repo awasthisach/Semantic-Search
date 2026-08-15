@@ -211,11 +211,11 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
                     ?.let { vocabulary[it] = index }
             }
         }
-        if (vocabulary.isEmpty()) return null
 
         val modelBytes = context.assets.open(assetName).use { it.readBytes() }
-        if (modelBytes.isEmpty()) return null
-        return modelBytes to vocabulary
+        return modelBytes.takeIf { it.isNotEmpty() }?.let { bytes ->
+            vocabulary.takeIf { it.isNotEmpty() }?.let { bytes to it }
+        }
     }
 
     fun loadModelFromBuffer(buffer: ByteBuffer): Boolean {
@@ -390,6 +390,7 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
             Log.w(
                 "TFLiteSemantic",
                 "Error closing interpreter: ${e.message}",
+                e,
             )
         } finally {
             interpreter = null
