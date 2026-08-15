@@ -399,18 +399,7 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
     }
 
     private fun clearModel() {
-        try {
-            interpreter?.close()
-        } catch (e: Exception) {
-            Log.w(
-                "TFLiteSemantic",
-                "Error clearing TFLite interpreter: ${e.message}",
-                e,
-            )
-        } finally {
-            interpreter = null
-            vocabMap = null
-        }
+        close()
     }
 
     private companion object {
