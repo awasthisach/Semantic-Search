@@ -172,10 +172,8 @@ tasks.withType<Test>().configureEach {
 }
 
 val debugUnitTests = tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }
-val unitTestExecutionData = fileTree(layout.buildDirectory) {
-  include("**/*.exec")
-  include("**/*.ec")
-  exclude("**/roborazzi/**")
+val unitTestExecutionData = fileTree(layout.buildDirectory.dir("outputs/unit_test_code_coverage/debugUnitTest")) {
+  include("*.exec")
 }
 
 tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
