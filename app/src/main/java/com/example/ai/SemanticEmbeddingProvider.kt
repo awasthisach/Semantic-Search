@@ -405,6 +405,7 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
             Log.w(
                 "TFLiteSemantic",
                 "Error clearing interpreter: ${e.message}",
+                e,
             )
         } finally {
             interpreter = null
