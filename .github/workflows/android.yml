@@ -136,124 +136,91 @@ jobs:
       with:
         name: coverage-jvm-robolectric
         path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
-    - name: Upload Release AAB Artifact
-      if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release-aab
-        path: app/build/outputs/bundle/release/app-release.aab
 
   instrumented-tests:
     name: Run Instrumented Android Tests
     needs: build-and-test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          validate-wrappers: true
-      - name: Verify Gradle Wrapper
-        run: |
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
-          ./gradlew --version
-      - name: Write google-services.json from secret (if set)
-        run: |
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
-            printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+    - name: Checkout Code
+      uses: actions/checkout@v6
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        validate-wrappers: true
+    - name: Verify Gradle Wrapper
+      run: |
+        test -f gradle/wrapper/gradle-wrapper.jar
+        test -f gradle/wrapper/gradle-wrapper.properties
+        ./gradlew --version
+    - name: Write google-services.json from secret (if set)
+      run: |
+        if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+          printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+        fi
+    - name: Create .env File
+      run: |
+        if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
+          printf '%s' "${{ secrets.ENV_FILE_CONTENT }}" > .env
+        else
+          : > .env
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           fi
-      - name: Verify google-services.json (optional for CI validation)
-        run: |
-          if [ -f app/google-services.json ] && [ -s app/google-services.json ]; then
-            echo "google-services.json present."
-          else
-            echo "Notice: google-services.json is not available. Continuing because the Android project uses MissingGoogleServicesStrategy.WARN; Firebase configuration is not required for compile/test validation."
-          fi
-      - name: Create .env File
-        run: |
-          if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
-            printf '%s' "${{ secrets.ENV_FILE_CONTENT }}" > .env
-          else
-            : > .env
-            if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-              printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-            fi
-          fi
-      - name: Download JVM/Robolectric Coverage
-        uses: actions/download-artifact@v5
-        with:
-          name: coverage-jvm-robolectric
-          path: app/build/reports/jacoco/jacocoDebugUnitTestReport
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -e /dev/kvm
-      - name: Run Instrumented Tests via Android Emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: ./gradlew :app:connectedDebugAndroidTest
-      - name: Generate Instrumented Coverage
-        run: ./gradlew :app:jacocoDebugAndroidTestReport
-      - name: Publish Instrumented Coverage Summary
-        run: |
-          python3 - <<'PY'
-          import os
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          report = Path('app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml')
-          if not report.is_file():
-              raise SystemExit(f'JaCoCo report not found: {report}')
-
-          root = ET.parse(report).getroot()
-          counters = {c.attrib.get('type'): c for c in root.iter('counter')}
-          line = counters.get('LINE')
-          if line is None:
-              available = ', '.join(sorted(k for k in counters if k)) or 'none'
-              raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
-
-          def pct(counter):
-              missed = int(counter.attrib['missed'])
-              covered = int(counter.attrib['covered'])
-              total = covered + missed
-              return (covered * 100 / total if total else 0.0), covered, total
-
-          line_pct, line_covered, line_total = pct(line)
-          instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
-          branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
-          print(f'Instrumented Android line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
-          print(f'Instrumented Android instruction coverage: {instruction_pct:.2f}%')
-          print(f'Instrumented Android branch coverage: {branch_pct:.2f}%')
-
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
-              f.write('## Instrumented Android Coverage\n\n')
-              f.write('| Metric | Coverage |\n|---|---:|\n')
-              f.write(f'| Line | {line_pct:.2f}% ({line_covered}/{line_total}) |\n')
-              f.write(f'| Instruction | {instruction_pct:.2f}% |\n')
-              f.write(f'| Branch | {branch_pct:.2f}% |\n')
-          PY
-      - name: Verify Aggregate Coverage >= 80%
-        run: |
-          python3 scripts/verify_aggregate_coverage.py \
-            app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml \
-            app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml
-      - name: Upload Instrumented Coverage Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-instrumented-android
-          path: app/build/reports/jacoco/jacocoDebugAndroidTestReport/
+        fi
+    - name: Download JVM/Robolectric Coverage
+      uses: actions/download-artifact@v5
+      with:
+        name: coverage-jvm-robolectric
+        path: app/build/reports/jacoco/jacocoDebugUnitTestReport
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+        test -e /dev/kvm
+    - name: Run Instrumented Tests via Android Emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 35
+        target: google_apis
+        arch: x86_64
+        profile: pixel_2
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
+        script: ./gradlew :app:connectedDebugAndroidTest
+    - name: Generate Instrumented Coverage
+      run: ./gradlew :app:jacocoDebugAndroidTestReport
+    - name: Publish Instrumented Coverage Summary
+      run: |
+        python3 - <<'PY'
+        import os
+        import xml.etree.ElementTree as ET
+        from pathlib import Path
+        report = Path('app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml')
+        if not report.is_file(): raise SystemExit(f'JaCoCo report not found: {report}')
+        root = ET.parse(report).getroot()
+        counters = {c.attrib.get('type'): c for c in root.iter('counter')}
+        line = counters.get('LINE')
+        if line is None:
+            raise SystemExit('LINE coverage counter missing; report contains no instrumented source classes.')
+        covered = int(line.attrib['covered']); missed = int(line.attrib['missed']); total = covered + missed
+        pct = covered * 100 / total if total else 0.0
+        print(f'Instrumented Android line coverage: {pct:.2f}% ({covered}/{total})')
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+            f.write(f'## Instrumented Android Coverage\n\nLine coverage: **{pct:.2f}% ({covered}/{total})**\n')
+    - name: Verify Aggregate Coverage >= 80%
+      run: |
+        python3 scripts/verify_aggregate_coverage.py \
+          app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml \
+          app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml
+    - name: Upload Instrumented Coverage Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-instrumented-android
+        path: app/build/reports/jacoco/jacocoDebugAndroidTestReport/
