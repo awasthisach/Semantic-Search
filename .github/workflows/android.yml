@@ -151,6 +151,11 @@ jobs:
               printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
             fi
           fi
+      - name: Download JVM/Robolectric Coverage
+        uses: actions/download-artifact@v5
+        with:
+          name: coverage-jvm-robolectric
+          path: app/build/reports/coverage/test/debug
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -189,6 +194,11 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
               f.write(f'## Instrumented Android Coverage\n\nLine coverage: **{pct:.2f}% ({covered}/{total})**\n')
           PY
+      - name: Verify Aggregate Coverage >= 80%
+        run: |
+          python3 scripts/verify_aggregate_coverage.py \
+            app/build/reports/coverage/test/debug/report.xml \
+            app/build/reports/coverage/androidTest/debug/connected/report.xml
       - name: Upload Instrumented Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
