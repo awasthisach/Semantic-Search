@@ -104,6 +104,7 @@ object LightweightEmbeddingEngine {
             Log.w(
                 "LightweightEmbedding",
                 "Image feature extraction failed for ${file.name}: ${e.message}",
+                e,
             )
             generateTextEmbedding("${file.name} ${file.length()}")
         }
@@ -257,6 +258,7 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
             Log.e(
                 "TFLiteSemantic",
                 "Failed to decode sampled bitmap: ${e.message}",
+                e,
             )
             null
         }
@@ -302,12 +304,14 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
             Log.w(
                 "TFLiteSemantic",
                 "Out of memory during image embedding for ${file.name}",
+                e,
             )
             null
         } catch (e: Exception) {
             Log.w(
                 "TFLiteSemantic",
                 "Error during image embedding inference: ${e.message}",
+                e,
             )
             null
         }
@@ -324,6 +328,7 @@ class TFLiteSemanticEmbeddingProvider(modelFile: File? = null) : SemanticEmbeddi
             Log.w(
                 "TFLiteSemantic",
                 "Error during text embedding inference: ${e.message}",
+                e,
             )
             null
         }
