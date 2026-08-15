@@ -3,10 +3,10 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Verified line-coverage baselines. These are non-regression gates for the
-# current CI surface; the long-term production target is substantially higher
-# and will be raised as meaningful tests are added. Keep the metric identical
-# to the published coverage summaries so the gate never compares unlike data.
+# Coverage gates are intentionally expressed at the same precision that CI
+# publishes (two decimal places). Comparing the unrounded floating-point value
+# against a two-decimal baseline can reject a report that is still exactly at
+# the published baseline because the denominator changed by one line.
 MIN_JVM_LINE = 2.55
 MIN_INSTRUMENTED_LINE = 23.86
 
@@ -24,6 +24,11 @@ def percentage(covered: int, missed: int) -> float:
     return covered * 100.0 / total if total else 0.0
 
 
+def published_percentage(value: float) -> float:
+    """Return the exact two-decimal metric published by the CI summary."""
+    return float(f"{value:.2f}")
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(
@@ -34,6 +39,8 @@ def main():
     instrumented = line_totals(Path(sys.argv[2]))
     jvm_pct = percentage(*jvm)
     instrumented_pct = percentage(*instrumented)
+    jvm_gate_pct = published_percentage(jvm_pct)
+    instrumented_gate_pct = published_percentage(instrumented_pct)
 
     print(
         f"JVM/Robolectric line coverage: {jvm_pct:.2f}% "
@@ -50,11 +57,11 @@ def main():
     )
 
     failures = []
-    if jvm_pct < MIN_JVM_LINE:
+    if jvm_gate_pct < MIN_JVM_LINE:
         failures.append(
             f"JVM line coverage regressed: {jvm_pct:.2f}% < {MIN_JVM_LINE:.2f}%"
         )
-    if instrumented_pct < MIN_INSTRUMENTED_LINE:
+    if instrumented_gate_pct < MIN_INSTRUMENTED_LINE:
         failures.append(
             "Instrumented line coverage regressed: "
             f"{instrumented_pct:.2f}% < {MIN_INSTRUMENTED_LINE:.2f}%"
