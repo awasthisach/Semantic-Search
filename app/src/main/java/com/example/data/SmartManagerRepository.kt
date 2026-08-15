@@ -78,9 +78,10 @@ open class SmartManagerRepository(
     suspend fun getFileByName(name: String) = dao.getFileByName(name)
 
     fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> {
-        if (!isSemanticSearchAvailable) return kotlinx.coroutines.flow.flowOf(emptyList())
         if (query.isBlank()) return dao.getAllActiveFiles()
-        return dao.getAllActiveFiles().map { files ->
+        if (!isSemanticSearchAvailable) return dao.searchFiles(query)
+
+        return dao.getSemanticIndexedActiveFiles().map { files ->
             val queryVec = tfliteProvider.generateTextEmbedding(query)
             if (queryVec == null) {
                 files.filter { file ->
@@ -89,7 +90,6 @@ open class SmartManagerRepository(
             } else {
                 files.mapNotNull { file ->
                     val fileVec = tfliteProvider.stringToFloatArray(file.semanticEmbeddingString)
-                        ?: tfliteProvider.generateTextEmbedding("${file.name} ${file.ocrText} ${file.tags}")
                     if (fileVec != null) {
                         val sim = tfliteProvider.calculateCosineSimilarity(queryVec, fileVec)
                         val isTextMatch = file.name.contains(query, ignoreCase = true) || file.ocrText.contains(query, ignoreCase = true) || file.tags.contains(query, ignoreCase = true)
