@@ -63,9 +63,7 @@ android {
       enableAndroidTestCoverage = true
     }
   }
-  testCoverage {
-    jacocoVersion = "0.8.13"
-  }
+  testCoverage { jacocoVersion = "0.8.13" }
   lint {
     checkReleaseBuilds = true
     abortOnError = true
@@ -93,7 +91,6 @@ secrets {
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
-
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
@@ -166,16 +163,9 @@ detekt {
 }
 
 val coverageExclusions = listOf(
-  "**/R.class",
-  "**/R$*.class",
-  "**/BuildConfig.*",
-  "**/Manifest*.*",
-  "**/*Test*.*",
-  "android/**/*.*",
-  "**/*_Factory.*",
-  "**/*_MembersInjector.*",
-  "**/*\$Companion.*",
-  "**/*\$DefaultImpls.*"
+  "**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*",
+  "**/*Test*.*", "android/**/*.*", "**/*_Factory.*", "**/*_MembersInjector.*",
+  "**/*\$Companion.*", "**/*\$DefaultImpls.*"
 )
 
 tasks.withType<Test>().configureEach {
@@ -185,25 +175,21 @@ tasks.withType<Test>().configureEach {
   }
 }
 
+val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+
 tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
   group = "verification"
   description = "Generate XML and HTML JaCoCo coverage for JVM/Robolectric debug tests."
-  dependsOn("testDebugUnitTest")
+  dependsOn(debugUnitTest)
   reports {
     xml.required.set(true)
     html.required.set(true)
   }
-  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) {
-    exclude(coverageExclusions)
-  }
-  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-    exclude(coverageExclusions)
-  }
+  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) { exclude(coverageExclusions) }
+  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) { exclude(coverageExclusions) }
   classDirectories.setFrom(files(javaClasses, kotlinClasses))
   sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-  executionData.setFrom(fileTree(layout.buildDirectory) {
-    include("outputs/unit_test_code_coverage/debugUnitTest/*.exec", "jacoco/*.exec")
-  })
+  executionData.setFrom(debugUnitTest.map { it.extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).destinationFile })
 }
 
 tasks.register<JacocoReport>("jacocoDebugAndroidTestReport") {
@@ -214,23 +200,16 @@ tasks.register<JacocoReport>("jacocoDebugAndroidTestReport") {
     xml.required.set(true)
     html.required.set(true)
   }
-  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) {
-    exclude(coverageExclusions)
-  }
-  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-    exclude(coverageExclusions)
-  }
+  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) { exclude(coverageExclusions) }
+  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) { exclude(coverageExclusions) }
   classDirectories.setFrom(files(javaClasses, kotlinClasses))
   sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-  executionData.setFrom(fileTree(layout.buildDirectory) {
-    include("outputs/code_coverage/debugAndroidTest/connected/**/*.ec")
-  })
+  executionData.setFrom(fileTree(layout.buildDirectory) { include("outputs/code_coverage/debugAndroidTest/connected/**/*.ec") })
 }
 
 fun coverageTotals(report: File): Pair<Long, Long> {
   if (!report.exists()) return 0L to 0L
-  val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }
-    .newDocumentBuilder().parse(report)
+  val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }.newDocumentBuilder().parse(report)
   val counters = document.getElementsByTagName("counter")
   var covered = 0L
   var missed = 0L
