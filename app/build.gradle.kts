@@ -18,7 +18,6 @@ plugins {
 android {
   namespace = "com.example"
   compileSdk = 35
-
   defaultConfig {
     applicationId = "com.aistudio.vvfsmartmanager.app"
     minSdk = 24
@@ -27,7 +26,6 @@ android {
     versionName = project.findProperty("versionName") as String? ?: "1.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
-
   signingConfigs {
     val keystorePath = System.getenv("KEYSTORE_PATH")
     if (!keystorePath.isNullOrEmpty()) {
@@ -48,7 +46,6 @@ android {
       }
     }
   }
-
   buildTypes {
     release {
       isCrunchPngs = false
@@ -175,12 +172,12 @@ tasks.withType<Test>().configureEach {
   }
 }
 
-val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+val debugUnitTests = tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }
 
 tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
   group = "verification"
   description = "Generate XML and HTML JaCoCo coverage for JVM/Robolectric debug tests."
-  dependsOn(debugUnitTest)
+  dependsOn(debugUnitTests)
   reports {
     xml.required.set(true)
     html.required.set(true)
@@ -189,7 +186,7 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
   val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) { exclude(coverageExclusions) }
   classDirectories.setFrom(files(javaClasses, kotlinClasses))
   sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-  executionData.setFrom(debugUnitTest.map { it.extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).destinationFile })
+  executionData.setFrom(debugUnitTests)
 }
 
 tasks.register<JacocoReport>("jacocoDebugAndroidTestReport") {
