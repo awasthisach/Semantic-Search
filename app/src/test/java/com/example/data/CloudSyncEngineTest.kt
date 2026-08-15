@@ -7,10 +7,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.io.IOException
 import java.net.UnknownHostException
 
+@RunWith(RobolectricTestRunner::class)
 class CloudSyncEngineTest {
     private val context = mockk<Context>(relaxed = true)
     private val dao = mockk<FileDao>(relaxed = true)
