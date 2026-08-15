@@ -1,7 +1,6 @@
 package com.example.data
 
 import android.content.Context
-import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -25,6 +24,21 @@ class CloudSyncEngineTest {
         fileSize = 7L,
         status = "PENDING"
     )
+
+    private class FakeAdapter(
+        private val result: CloudSyncResult = CloudSyncResult.Success(7L),
+        private val failure: Exception? = null
+    ) : CloudProviderAdapter {
+        override val providerId: String = "GOOGLE_DRIVE"
+
+        override suspend fun uploadFile(file: File, remotePath: String): CloudSyncResult {
+            failure?.let { throw it }
+            return result
+        }
+
+        override suspend fun downloadFile(remotePath: String, destinationFile: File): CloudSyncResult =
+            CloudSyncResult.NotSupported
+    }
 
     @Test
     fun missingFile_returnsNonRetryableError() = runTest {
@@ -57,9 +71,7 @@ class CloudSyncEngineTest {
     fun successfulUpload_returnsSuccess() = runTest {
         val file = File.createTempFile("cloud-sync", ".txt")
         try {
-            val adapter = mockk<CloudProviderAdapter>()
-            coEvery { adapter.uploadFile(file, "sample.txt") } returns CloudSyncResult.Success(7L)
-            val engine = CloudSyncEngine(context, dao, authManager, adapter)
+            val engine = CloudSyncEngine(context, dao, authManager, FakeAdapter())
 
             val result = engine.syncItem(item(file.absolutePath))
 
@@ -73,9 +85,12 @@ class CloudSyncEngineTest {
     fun unknownHostException_isRetryable() = runTest {
         val file = File.createTempFile("cloud-sync", ".txt")
         try {
-            val adapter = mockk<CloudProviderAdapter>()
-            coEvery { adapter.uploadFile(file, "sample.txt") } throws UnknownHostException("offline")
-            val engine = CloudSyncEngine(context, dao, authManager, adapter)
+            val engine = CloudSyncEngine(
+                context,
+                dao,
+                authManager,
+                FakeAdapter(failure = UnknownHostException("offline"))
+            )
 
             val result = engine.syncItem(item(file.absolutePath))
 
@@ -92,9 +107,12 @@ class CloudSyncEngineTest {
     fun ioException_isRetryable() = runTest {
         val file = File.createTempFile("cloud-sync", ".txt")
         try {
-            val adapter = mockk<CloudProviderAdapter>()
-            coEvery { adapter.uploadFile(file, "sample.txt") } throws IOException("temporary failure")
-            val engine = CloudSyncEngine(context, dao, authManager, adapter)
+            val engine = CloudSyncEngine(
+                context,
+                dao,
+                authManager,
+                FakeAdapter(failure = IOException("temporary failure"))
+            )
 
             val result = engine.syncItem(item(file.absolutePath))
 
