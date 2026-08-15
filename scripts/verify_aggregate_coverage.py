@@ -8,10 +8,10 @@ MINIMUM = 80.0
 
 def instruction_totals(path: Path):
     root = ET.parse(path).getroot()
-    for counter in root.iter("counter"):
-        if counter.attrib.get("type") == "INSTRUCTION":
-            return int(counter.attrib["covered"]), int(counter.attrib["missed"])
-    raise RuntimeError(f"INSTRUCTION counter missing in {path}")
+    counter = root.find("./counter[@type='INSTRUCTION']")
+    if counter is None:
+        raise RuntimeError(f"Report-level INSTRUCTION counter missing in {path}")
+    return int(counter.attrib["covered"]), int(counter.attrib["missed"])
 
 
 def main():
