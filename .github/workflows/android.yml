@@ -73,31 +73,24 @@ jobs:
         import os
         import xml.etree.ElementTree as ET
         from pathlib import Path
-
         report = Path('app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml')
         if not report.is_file():
             raise SystemExit(f'JaCoCo report not found: {report}')
-
         root = ET.parse(report).getroot()
         counters = {c.attrib.get('type'): c for c in root.iter('counter')}
         line = counters.get('LINE')
         if line is None:
             available = ', '.join(sorted(k for k in counters if k)) or 'none'
             raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
-
         def pct(counter):
-            missed = int(counter.attrib['missed'])
-            covered = int(counter.attrib['covered'])
-            total = covered + missed
+            missed = int(counter.attrib['missed']); covered = int(counter.attrib['covered']); total = covered + missed
             return (covered * 100 / total if total else 0.0), covered, total
-
         line_pct, line_covered, line_total = pct(line)
         instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
         branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
         print(f'JVM/Robolectric line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
         print(f'JVM/Robolectric instruction coverage: {instruction_pct:.2f}%')
         print(f'JVM/Robolectric branch coverage: {branch_pct:.2f}%')
-
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
             f.write('## JVM/Robolectric Coverage\n\n')
             f.write('| Metric | Coverage |\n|---|---:|\n')
@@ -131,6 +124,13 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+    - name: Upload Release AAB Artifact (if built)
+      if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-aab
+        path: app/build/outputs/bundle/release/app-release.aab
+        if-no-files-found: error
     - name: Upload JVM/Robolectric Coverage Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -207,13 +207,13 @@ jobs:
         root = ET.parse(report).getroot()
         counters = {c.attrib.get('type'): c for c in root.iter('counter')}
         line = counters.get('LINE')
-        if line is None:
-            raise SystemExit('LINE coverage counter missing; report contains no instrumented source classes.')
+        if line is None: raise SystemExit('LINE coverage counter missing; report contains no instrumented source classes.')
         covered = int(line.attrib['covered']); missed = int(line.attrib['missed']); total = covered + missed
         pct = covered * 100 / total if total else 0.0
         print(f'Instrumented Android line coverage: {pct:.2f}% ({covered}/{total})')
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
             f.write(f'## Instrumented Android Coverage\n\nLine coverage: **{pct:.2f}% ({covered}/{total})**\n')
+        PY
     - name: Verify Aggregate Coverage >= 80%
       run: |
         python3 scripts/verify_aggregate_coverage.py \
