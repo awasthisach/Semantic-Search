@@ -45,6 +45,17 @@ class PhysicalStorageTest {
     }
 
     @Test
+    fun renameRejectsPathTraversal() {
+        val srcFile = File(testDir, "original.txt").apply { writeText("Hello World") }
+
+        val result = PhysicalStorageManager.renameFile(context, srcFile.absolutePath, "../escaped.txt")
+
+        assertTrue(result.isFailure)
+        assertTrue(srcFile.exists())
+        assertFalse(File(testDir.parentFile, "escaped.txt").exists())
+    }
+
+    @Test
     fun testPhysicalMoveToTrashAndRestore() {
         val srcFile = File(testDir, "document.pdf").apply { writeText("PDF Content") }
         val originalPath = srcFile.absolutePath
@@ -74,11 +85,29 @@ class PhysicalStorageTest {
     }
 
     @Test
+    fun deletingMissingFile_isIdempotent() {
+        val missing = File(testDir, "missing.txt")
+
+        assertTrue(PhysicalStorageManager.deleteFile(context, missing.absolutePath))
+    }
+
+    @Test
+    fun storageDirectories_areCreatedInsideAppStorage() {
+        val recycleBin = PhysicalStorageManager.getRecycleBinDir(context)
+        val vault = PhysicalStorageManager.getVaultDir(context)
+        val restored = PhysicalStorageManager.getRestoredDir(context)
+
+        assertTrue(recycleBin.isDirectory)
+        assertTrue(vault.isDirectory)
+        assertTrue(restored.isDirectory)
+        assertTrue(vault.absolutePath.startsWith(context.filesDir.absolutePath))
+    }
+
+    @Test
     fun testEncryptAndWipeSourceExceedsSizeLimit() {
         val srcFile = File(testDir, "large_file.bin")
-        // Create a large file quickly using RandomAccessFile to set length
         java.io.RandomAccessFile(srcFile, "rw").use { raf ->
-            raf.setLength(51 * 1024 * 1024L) // 51MB
+            raf.setLength(51 * 1024 * 1024L)
         }
         assertTrue(srcFile.exists())
         assertEquals(51 * 1024 * 1024L, srcFile.length())
@@ -95,7 +124,7 @@ class PhysicalStorageTest {
     fun testDecryptAndRestoreExceedsSizeLimit() {
         val vaultFile = File(testDir, "large_vault_file.vvf")
         java.io.RandomAccessFile(vaultFile, "rw").use { raf ->
-            raf.setLength(51 * 1024 * 1024L) // 51MB
+            raf.setLength(51 * 1024 * 1024L)
         }
         assertTrue(vaultFile.exists())
 
