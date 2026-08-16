@@ -3,8 +3,8 @@ package com.example.data
 
 import android.content.Context
 import android.util.Log
-import com.example.ai.FallbackSemanticEmbeddingProvider
 import com.example.ai.SemanticEmbeddingProvider
+import com.example.ai.FallbackSemanticEmbeddingProvider
 import com.example.ai.TFLiteSemanticEmbeddingProvider
 import com.example.security.KeystoreVaultManager
 import com.example.storage.PhysicalStorageManager
@@ -27,7 +27,7 @@ import java.io.File
 open class SmartManagerRepository(
     private val context: Context,
     private val dao: FileDao = AppDatabase.getDatabase(context).fileDao(),
-    private val ocrEngine: OcrEngine? = null,
+    private val ocrEngine: OcrEngine? = null
 ) {
     val keystoreVaultManager = KeystoreVaultManager()
     val storageScanner = StorageScanner(context)
@@ -40,9 +40,7 @@ open class SmartManagerRepository(
     private fun isAssetExists(fileName: String): Boolean = try {
         context.assets.open(fileName).use { }
         true
-    } catch (_: Exception) {
-        false
-    }
+    } catch (_: Exception) { false }
 
     val tfliteProvider: SemanticEmbeddingProvider by lazy {
         if (isAssetExists("mobile_clip_embedding.tflite") && isAssetExists("mobile_clip_vocab.txt")) {
@@ -62,11 +60,9 @@ open class SmartManagerRepository(
         get() = tfliteProvider is TFLiteSemanticEmbeddingProvider && tfliteProvider.isModelLoaded()
 
     private val duplicateDetectionEngine by lazy { DuplicateDetectionEngine(storageScanner, tfliteProvider) }
-    private val repositoryScope = CoroutineScope(
-        Dispatchers.IO + Job() + kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
-            Log.e("SmartManagerRepository", "Unhandled exception in background repositoryScope", throwable)
-        },
-    )
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + Job() + kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        Log.e("SmartManagerRepository", "Unhandled exception in background repositoryScope", throwable)
+    })
     private var activeScanJob: Job? = null
     private val _scanProgress = MutableStateFlow(1.0f)
     val scanProgress: StateFlow<Float> = _scanProgress.asStateFlow()
@@ -89,18 +85,14 @@ open class SmartManagerRepository(
             val queryVec = tfliteProvider.generateTextEmbedding(query)
             if (queryVec == null) {
                 files.filter { file ->
-                    file.name.contains(query, ignoreCase = true) ||
-                        file.ocrText.contains(query, ignoreCase = true) ||
-                        file.tags.contains(query, ignoreCase = true)
+                    file.name.contains(query, ignoreCase = true) || file.ocrText.contains(query, ignoreCase = true) || file.tags.contains(query, ignoreCase = true)
                 }
             } else {
                 files.mapNotNull { file ->
                     val fileVec = tfliteProvider.stringToFloatArray(file.semanticEmbeddingString)
                     if (fileVec != null) {
                         val sim = tfliteProvider.calculateCosineSimilarity(queryVec, fileVec)
-                        val isTextMatch = file.name.contains(query, ignoreCase = true) ||
-                            file.ocrText.contains(query, ignoreCase = true) ||
-                            file.tags.contains(query, ignoreCase = true)
+                        val isTextMatch = file.name.contains(query, ignoreCase = true) || file.ocrText.contains(query, ignoreCase = true) || file.tags.contains(query, ignoreCase = true)
                         if (sim > 0.10f || isTextMatch) file to sim else null
                     } else null
                 }.sortedByDescending { it.second }.map { it.first }
@@ -121,7 +113,7 @@ open class SmartManagerRepository(
                     title = "Exact SHA-256 Hash Match: ${duplicateList.first().name}",
                     level = 1,
                     similarityScore = 100,
-                    files = duplicateList,
+                    files = duplicateList
                 )
             }
     }.flowOn(Dispatchers.Default)
@@ -144,11 +136,7 @@ open class SmartManagerRepository(
                     chunk.forEach { file ->
                         ensureActive()
                         var updated = file
-                        if (
-                            isOcrEnabled &&
-                            updated.ocrText.isBlank() &&
-                            (updated.category == FileCategory.IMAGES.name || updated.category == FileCategory.DOCUMENTS.name)
-                        ) {
+                        if (isOcrEnabled && updated.ocrText.isBlank() && (updated.category == FileCategory.IMAGES.name || updated.category == FileCategory.DOCUMENTS.name)) {
                             val realOcr = activeOcrEngine.extractRealOcrText(updated.path)
                             if (realOcr.isNotBlank()) updated = updated.copy(ocrText = realOcr)
                         }
@@ -159,33 +147,21 @@ open class SmartManagerRepository(
                                 if (hash.isNotBlank()) updated = updated.copy(md5Hash = hash)
                             }
                         }
-                        if (
-                            updated.category == FileCategory.IMAGES.name &&
-                            updated.visualSimilarityHash.isBlank() &&
-                            !updated.path.startsWith("content://")
-                        ) {
+                        if (updated.category == FileCategory.IMAGES.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 val dHash = withContext(Dispatchers.IO) { storageScanner.computeDHash(javaFile) }
                                 if (dHash.isNotBlank()) updated = updated.copy(visualSimilarityHash = dHash)
                             }
                         }
-                        if (
-                            updated.category == FileCategory.VIDEO.name &&
-                            updated.visualSimilarityHash.isBlank() &&
-                            !updated.path.startsWith("content://")
-                        ) {
+                        if (updated.category == FileCategory.VIDEO.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 val vHash = withContext(Dispatchers.IO) { storageScanner.computeVideoDHash(javaFile) }
                                 if (vHash.isNotBlank()) updated = updated.copy(visualSimilarityHash = vHash)
                             }
                         }
-                        if (
-                            updated.category == FileCategory.DOCUMENTS.name &&
-                            updated.visualSimilarityHash.isBlank() &&
-                            !updated.path.startsWith("content://")
-                        ) {
+                        if (updated.category == FileCategory.DOCUMENTS.name && updated.visualSimilarityHash.isBlank() && !updated.path.startsWith("content://")) {
                             val javaFile = File(updated.path)
                             if (javaFile.exists() && javaFile.canRead()) {
                                 val docFp = withContext(Dispatchers.IO) { storageScanner.computeDocumentFingerprint(javaFile) }
@@ -196,16 +172,13 @@ open class SmartManagerRepository(
                             val textContent = "${updated.name} ${updated.ocrText} ${updated.tags}".trim()
                             val javaFile = if (!updated.path.startsWith("content://")) File(updated.path) else null
                             val embedding = if (javaFile != null && javaFile.exists() && javaFile.canRead()) {
-                                tfliteProvider.generateImageEmbedding(javaFile) ?:
-                                    tfliteProvider.generateTextEmbedding(textContent)
-                            } else {
-                                tfliteProvider.generateTextEmbedding(textContent)
-                            }
+                                tfliteProvider.generateImageEmbedding(javaFile) ?: tfliteProvider.generateTextEmbedding(textContent)
+                            } else tfliteProvider.generateTextEmbedding(textContent)
                             if (embedding != null) {
                                 updated = updated.copy(
                                     semanticEmbeddingVersion = tfliteProvider.embeddingVersion,
                                     semanticIndexed = true,
-                                    semanticEmbeddingString = tfliteProvider.floatArrayToString(embedding),
+                                    semanticEmbeddingString = tfliteProvider.floatArrayToString(embedding)
                                 )
                             }
                         }
@@ -238,18 +211,11 @@ open class SmartManagerRepository(
         Triple(indexed, total - indexed, if (total > 0) indexed.toFloat() / total.toFloat() else 1.0f)
     }.flowOn(Dispatchers.Default)
 
-    suspend fun <T>(
-        maxAttempts: Int = 3,
-        initialDelayMs: Long = 100,
-        factor: Double = 2.0,
-        block: suspend () -> T,
-    ): T {
+    suspend fun <T> withRetry(maxAttempts: Int = 3, initialDelayMs: Long = 100, factor: Double = 2.0, block: suspend () -> T): T {
         var currentDelay = initialDelayMs
         var lastException: Throwable? = null
         for (attempt in 1..maxAttempts) {
-            try {
-                return block()
-            } catch (e: Exception) {
+            try { return block() } catch (e: Exception) {
                 lastException = e
                 Log.w("SmartManagerRepository", "Operation failed on attempt $attempt of $maxAttempts: ${e.message}")
                 if (attempt < maxAttempts) {
@@ -267,10 +233,7 @@ open class SmartManagerRepository(
         withRetry {
             var totalCount = 0
             storageScanner.scanDeviceStorageFlow(computeHashes = false).collect { batch ->
-                if (batch.isNotEmpty()) {
-                    dao.insertFiles(batch)
-                    totalCount += batch.size
-                }
+                if (batch.isNotEmpty()) { dao.insertFiles(batch); totalCount += batch.size }
             }
             startIncrementalDuplicateScan()
             totalCount
@@ -286,19 +249,10 @@ open class SmartManagerRepository(
         if (currentFile.isRecycleBin) return@withContext
         withRetry {
             val trashResult = PhysicalStorageManager.moveToTrash(context, currentFile.path)
-            if (trashResult.isFailure) {
-                throw trashResult.exceptionOrNull() ?: java.io.IOException("Failed to move file to trash")
-            }
+            if (trashResult.isFailure) throw trashResult.exceptionOrNull() ?: java.io.IOException("Failed to move file to trash")
             val newPath = trashResult.getOrThrow()
             val originalPathToKeep = if (currentFile.originalPath.isNotBlank()) currentFile.originalPath else currentFile.path
-            dao.updateFile(
-                currentFile.copy(
-                    path = newPath,
-                    originalPath = originalPathToKeep,
-                    isRecycleBin = true,
-                    deletedTimestampMs = System.currentTimeMillis(),
-                ),
-            )
+            dao.updateFile(currentFile.copy(path = newPath, originalPath = originalPathToKeep, isRecycleBin = true, deletedTimestampMs = System.currentTimeMillis()))
         }
     }
 
@@ -308,9 +262,7 @@ open class SmartManagerRepository(
         withRetry {
             val targetPath = if (currentFile.originalPath.isNotBlank()) currentFile.originalPath else currentFile.path
             val restoreResult = PhysicalStorageManager.restoreFromTrash(context, currentFile.path, targetPath)
-            if (restoreResult.isFailure) {
-                throw restoreResult.exceptionOrNull() ?: java.io.IOException("Failed to restore file from trash")
-            }
+            if (restoreResult.isFailure) throw restoreResult.exceptionOrNull() ?: java.io.IOException("Failed to restore file from trash")
             dao.updateFile(currentFile.copy(path = restoreResult.getOrThrow(), originalPath = "", isRecycleBin = false, deletedTimestampMs = 0L))
         }
     }
@@ -318,9 +270,7 @@ open class SmartManagerRepository(
     suspend fun deletePermanently(file: FileItemEntity) = withContext(Dispatchers.IO) {
         val currentFile = dao.getFileById(file.id) ?: return@withContext
         withRetry {
-            if (!PhysicalStorageManager.deleteFile(context, currentFile.path)) {
-                throw java.io.IOException("Failed to physically delete file at ${currentFile.path}")
-            }
+            if (!PhysicalStorageManager.deleteFile(context, currentFile.path)) throw java.io.IOException("Failed to physically delete file at ${currentFile.path}")
             dao.deleteFileById(currentFile.id)
         }
     }
@@ -357,33 +307,71 @@ open class SmartManagerRepository(
         return dao.getAllPlugins().first().find { it.pluginId == pluginId }?.isEnabled ?: true
     }
 
-    suspend fun enqueueCloudSyncItem(
-        provider: String,
-        fileName: String,
-        size: Long,
-        filePath: String = "",
-        isCore: Boolean = false,
-    ): Boolean = withContext(Dispatchers.IO) {
+    suspend fun enqueueCloudSyncItem(provider: String, fileName: String, size: Long, filePath: String = "", isCore: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         if (!isProviderEnabled(provider)) return@withContext false
-        dao.insertCloudSyncItem(
-            CloudSyncItemEntity(
-                provider = provider,
-                fileName = fileName,
-                filePath = filePath,
-                fileSize = size,
-                status = "PENDING",
-                lastSyncedMs = 0L,
-                isCore = isCore,
-            ),
-        )
+        val currentItems = dao.getCloudSyncItems().first()
+        val keyPath = if (filePath.isNotBlank()) filePath else fileName
+        val duplicate = currentItems.find { it.provider.equals(provider, true) && (if (it.filePath.isNotBlank()) it.filePath else it.fileName) == keyPath && it.status in listOf("PENDING", "QUEUED", "UPLOADING", "SYNCED") }
+        if (duplicate != null) return@withContext false
+        withRetry { dao.insertCloudSyncItem(CloudSyncItemEntity(provider = provider, fileName = fileName, filePath = filePath, fileSize = size, status = "QUEUED", lastSyncedMs = System.currentTimeMillis(), isCore = isCore)) }
+        enqueueCloudSyncWork()
         true
     }
 
+    suspend fun retryCloudSyncItem(id: Long): Boolean = withContext(Dispatchers.IO) {
+        val item = dao.getCloudSyncItems().first().find { it.id == id } ?: return@withContext false
+        if (item.status == "SYNCED" || !isProviderEnabled(item.provider)) return@withContext false
+        withRetry { dao.insertCloudSyncItem(item.copy(status = "QUEUED", lastSyncedMs = System.currentTimeMillis())) }
+        enqueueCloudSyncWork()
+        true
+    }
+
+    suspend fun cancelCloudSyncItem(id: Long): Boolean = withContext(Dispatchers.IO) {
+        val item = dao.getCloudSyncItems().first().find { it.id == id } ?: return@withContext false
+        if (item.status == "SYNCED") return@withContext false
+        withRetry { dao.deleteCloudSyncItem(id) }
+        true
+    }
+
+    suspend fun addSyncItem(provider: String, fileName: String, size: Long, filePath: String = "") = enqueueCloudSyncItem(provider, fileName, size, filePath)
+
     fun trimMemory() {
         try {
-            if (tfliteProvider is TFLiteSemanticEmbeddingProvider) tfliteProvider.close()
-        } catch (e: Exception) {
-            Log.w("SmartManagerRepository", "Failed to release semantic model resources", e)
-        }
+            if (tfliteProvider is TFLiteSemanticEmbeddingProvider) {
+                (tfliteProvider as TFLiteSemanticEmbeddingProvider).close()
+            }
+        } catch (e: Exception) { Log.e("SmartManagerRepository", "Failed to trim memory", e) }
+    }
+
+    fun enqueueDuplicateCleanupWork() {
+        try {
+            val constraints = androidx.work.Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.DuplicateCleanupWorker>().setConstraints(constraints).setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 10, java.util.concurrent.TimeUnit.SECONDS).build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("DuplicateCleanupWork", androidx.work.ExistingWorkPolicy.KEEP, request)
+        } catch (e: Exception) { Log.e("SmartManagerRepository", "Failed to enqueue DuplicateCleanupWorker", e) }
+    }
+
+    fun enqueueCloudSyncWork() {
+        try {
+            val constraints = androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CloudSyncWorker>().setConstraints(constraints).setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 10, java.util.concurrent.TimeUnit.SECONDS).build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("CloudSyncWork", androidx.work.ExistingWorkPolicy.KEEP, request)
+        } catch (e: Exception) { Log.e("SmartManagerRepository", "Failed to enqueue CloudSyncWorker", e) }
+    }
+
+    fun enqueueCacheCleanupWork() {
+        try {
+            val constraints = androidx.work.Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.CacheCleanupWorker>().setConstraints(constraints).setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 10, java.util.concurrent.TimeUnit.SECONDS).build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("CacheCleanupWork", androidx.work.ExistingWorkPolicy.KEEP, request)
+        } catch (e: Exception) { Log.e("SmartManagerRepository", "Failed to enqueue CacheCleanupWorker", e) }
+    }
+
+    open fun enqueueBackgroundIndexWork() {
+        try {
+            val constraints = androidx.work.Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build()
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.worker.BackgroundIndexWorker>().setConstraints(constraints).setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 10, java.util.concurrent.TimeUnit.SECONDS).build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("BackgroundIndexWork", androidx.work.ExistingWorkPolicy.KEEP, request)
+        } catch (e: Exception) { Log.e("SmartManagerRepository", "Failed to enqueue BackgroundIndexWorker", e) }
     }
 }
