@@ -16,7 +16,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class VaultRepositoryTest {
-
     private lateinit var context: Context
     private lateinit var fakeDao: FakeFileDao
     private lateinit var keystoreVaultManager: KeystoreVaultManager
@@ -26,30 +25,16 @@ class VaultRepositoryTest {
         var updatedFile: FileItemEntity? = null
         var insertedVaultItem: VaultItemEntity? = null
         var deletedVaultItemId: Long? = null
-
-        override suspend fun updateFile(file: FileItemEntity) {
-            updatedFile = file
-        }
-
-        override suspend fun insertVaultItem(item: VaultItemEntity): Long {
-            insertedVaultItem = item.copy(id = 1L)
-            return 1L
-        }
-
-        override suspend fun deleteVaultItemById(id: Long) {
-            deletedVaultItemId = id
-        }
-
-        override suspend fun getVaultFileByName(name: String): FileItemEntity? {
-            return FileItemEntity(id = 5, name = "secret.png", path = "/secret.png", category = "IMAGES", sizeBytes = 1200, isVault = true)
-        }
-
-        // Dummy overrides
+        override suspend fun updateFile(file: FileItemEntity) { updatedFile = file }
+        override suspend fun insertVaultItem(item: VaultItemEntity): Long { insertedVaultItem = item.copy(id = 1L); return 1L }
+        override suspend fun deleteVaultItemById(id: Long) { deletedVaultItemId = id }
+        override suspend fun getVaultFileByName(name: String): FileItemEntity? = FileItemEntity(id = 5, name = "secret.png", path = "/secret.png", category = "IMAGES", sizeBytes = 1200, isVault = true)
         override suspend fun getFileById(id: Long): FileItemEntity? = null
         override suspend fun getFileByName(name: String): FileItemEntity? = null
         override fun getOcrScannedFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override fun getAllActiveFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
+        override fun getSemanticIndexedActiveFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override fun getRecentFiles(): Flow<List<FileItemEntity>> = flowOf(emptyList())
         override fun getCategoryStats(): Flow<List<CategoryStat>> = flowOf(emptyList())
         override suspend fun getFilteredFilesPaged(category: String?, query: String, limit: Int, offset: Int): List<FileItemEntity> = emptyList()
@@ -79,58 +64,22 @@ class VaultRepositoryTest {
         override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(emptyList())
     }
 
-    @Before
-    fun setUp() {
-        context = RuntimeEnvironment.getApplication()
-        fakeDao = FakeFileDao()
-        keystoreVaultManager = KeystoreVaultManager()
-        repository = VaultRepository(context, fakeDao, keystoreVaultManager)
-    }
+    @Before fun setUp() { context = RuntimeEnvironment.getApplication(); fakeDao = FakeFileDao(); keystoreVaultManager = KeystoreVaultManager(); repository = VaultRepository(context, fakeDao, keystoreVaultManager) }
 
-    @Test
-    fun testEncryptToVaultSuccess(): Unit = runBlocking {
-        val tempFile = java.io.File(context.filesDir, "secret.png")
-        tempFile.writeText("sensitive secure data to encrypt")
+    @Test fun testEncryptToVaultSuccess(): Unit = runBlocking {
+        val tempFile = java.io.File(context.filesDir, "secret.png"); tempFile.writeText("sensitive secure data to encrypt")
         val file = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = tempFile.length())
-
         repository.encryptToVault(file)
-
-        assertNotNull(fakeDao.updatedFile)
-        assertTrue(fakeDao.updatedFile!!.isVault)
-        assertNotNull(fakeDao.insertedVaultItem)
-        assertEquals("secret.png", fakeDao.insertedVaultItem!!.originalName)
-        
-        // Original file should be securely wiped and deleted
-        assertFalse(tempFile.exists())
+        assertNotNull(fakeDao.updatedFile); assertTrue(fakeDao.updatedFile!!.isVault); assertNotNull(fakeDao.insertedVaultItem); assertEquals("secret.png", fakeDao.insertedVaultItem!!.originalName); assertFalse(tempFile.exists())
     }
 
-    @Test
-    fun testUnlockFromVaultDelegation(): Unit = runBlocking {
-        val tempFile = java.io.File(context.filesDir, "secret.png")
-        if (tempFile.exists()) tempFile.delete()
-        
-        // Encrypt first to have a valid encrypted file in vault
-        val originalFile = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = 1200)
-        tempFile.writeText("sensitive data to encrypt")
-        
+    @Test fun testUnlockFromVaultDelegation(): Unit = runBlocking {
+        val tempFile = java.io.File(context.filesDir, "secret.png"); if (tempFile.exists()) tempFile.delete()
+        val originalFile = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = 1200); tempFile.writeText("sensitive data to encrypt")
         repository.encryptToVault(originalFile)
-        
-        val vaultItem = fakeDao.insertedVaultItem
-        assertNotNull(vaultItem)
-        
-        val success = repository.unlockFromVault(vaultItem!!, originalFile)
-        assertTrue(success)
-
-        assertNotNull(fakeDao.updatedFile)
-        assertFalse(fakeDao.updatedFile!!.isVault)
-        assertEquals(1L, fakeDao.deletedVaultItemId)
-        
-        // Restored file should exist now
-        assertTrue(tempFile.exists())
-        assertEquals("sensitive data to encrypt", tempFile.readText())
-        
-        // Clean up
-        tempFile.delete()
+        val vaultItem = fakeDao.insertedVaultItem; assertNotNull(vaultItem)
+        val success = repository.unlockFromVault(vaultItem!!, originalFile); assertTrue(success)
+        assertNotNull(fakeDao.updatedFile); assertFalse(fakeDao.updatedFile!!.isVault); assertEquals(1L, fakeDao.deletedVaultItemId); assertTrue(tempFile.exists()); assertEquals("sensitive data to encrypt", tempFile.readText()); tempFile.delete()
         Unit
     }
 }
