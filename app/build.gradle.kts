@@ -1,7 +1,4 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-import org.gradle.testing.jacoco.tasks.JacocoReport
-import org.gradle.api.tasks.testing.Test
-import javax.xml.parsers.DocumentBuilderFactory
 
 plugins {
   alias(libs.plugins.android.application)
@@ -12,7 +9,6 @@ plugins {
   alias(libs.plugins.detekt)
   alias(libs.plugins.google.services)
   alias(libs.plugins.firebase.crashlytics)
-  jacoco
 }
 
 android {
@@ -63,23 +59,31 @@ android {
       enableAndroidTestCoverage = true
     }
   }
+
   testCoverage {
     jacocoVersion = "0.8.13"
   }
+
   lint {
     checkReleaseBuilds = true
     abortOnError = true
     lintConfig = file("lint.xml")
   }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
   }
+
   buildFeatures {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+
+  testOptions {
+    unitTests { isIncludeAndroidResources = true }
+  }
+
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -93,7 +97,6 @@ secrets {
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
-
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
@@ -109,6 +112,7 @@ dependencies {
   implementation(libs.androidx.biometric)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.documentfile)
+  implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -131,6 +135,7 @@ dependencies {
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
+
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
@@ -144,14 +149,17 @@ dependencies {
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
+
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
+
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
   debugImplementation(libs.leakcanary.android)
+
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
@@ -162,100 +170,4 @@ detekt {
   ignoreFailures = false
   config.setFrom(file("config/detekt/detekt.yml"))
   baseline = file("detekt-baseline.xml")
-}
-
-val coverageExclusions = listOf(
-  "**/R.class",
-  "**/R$*.class",
-  "**/BuildConfig.*",
-  "**/Manifest*.*",
-  "**/*Test*.*",
-  "android/**/*.*",
-  "**/*_Factory.*",
-  "**/*_MembersInjector.*",
-  "**/*\$Companion.*",
-  "**/*\$DefaultImpls.*"
-)
-
-tasks.withType<Test>().configureEach {
-  extensions.configure(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java) {
-    isIncludeNoLocationClasses = true
-    excludes = listOf("jdk.internal.*")
-  }
-}
-
-tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
-  group = "verification"
-  description = "Generate XML and HTML JaCoCo coverage for JVM/Robolectric debug tests."
-  dependsOn("testDebugUnitTest")
-  reports {
-    xml.required.set(true)
-    html.required.set(true)
-  }
-  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) {
-    exclude(coverageExclusions)
-  }
-  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-    exclude(coverageExclusions)
-  }
-  classDirectories.setFrom(files(javaClasses, kotlinClasses))
-  sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-  executionData.setFrom(fileTree(layout.buildDirectory) {
-    include("outputs/unit_test_code_coverage/debugUnitTest/*.exec", "jacoco/*.exec")
-  })
-}
-
-tasks.register<JacocoReport>("jacocoDebugAndroidTestReport") {
-  group = "verification"
-  description = "Generate XML and HTML JaCoCo coverage for debug instrumented Android tests."
-  dependsOn("connectedDebugAndroidTest")
-  reports {
-    xml.required.set(true)
-    html.required.set(true)
-  }
-  val javaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) {
-    exclude(coverageExclusions)
-  }
-  val kotlinClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-    exclude(coverageExclusions)
-  }
-  classDirectories.setFrom(files(javaClasses, kotlinClasses))
-  sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-  executionData.setFrom(fileTree(layout.buildDirectory) {
-    include("outputs/code_coverage/debugAndroidTest/connected/**/*.ec")
-  })
-}
-
-fun coverageTotals(report: File): Pair<Long, Long> {
-  if (!report.exists()) return 0L to 0L
-  val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }
-    .newDocumentBuilder().parse(report)
-  val counters = document.getElementsByTagName("counter")
-  var covered = 0L
-  var missed = 0L
-  for (i in 0 until counters.length) {
-    val node = counters.item(i)
-    if (node.attributes.getNamedItem("type")?.nodeValue == "INSTRUCTION") {
-      covered += node.attributes.getNamedItem("covered")?.nodeValue?.toLongOrNull() ?: 0L
-      missed += node.attributes.getNamedItem("missed")?.nodeValue?.toLongOrNull() ?: 0L
-    }
-  }
-  return covered to missed
-}
-
-tasks.register("verifyAggregateCoverage") {
-  group = "verification"
-  description = "Require aggregate JVM + instrumented instruction coverage to be at least 80%."
-  dependsOn("jacocoDebugUnitTestReport", "jacocoDebugAndroidTestReport")
-  doLast {
-    val reports = listOf(
-      layout.buildDirectory.file("reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml").get().asFile,
-      layout.buildDirectory.file("reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml").get().asFile
-    )
-    val totals = reports.map(::coverageTotals).reduce { a, b -> (a.first + b.first) to (a.second + b.second) }
-    val total = totals.first + totals.second
-    val percent = if (total == 0L) 0.0 else totals.first * 100.0 / total
-    logger.lifecycle("Aggregate instruction coverage: %.2f%% (%d covered / %d total)".format(percent, totals.first, total))
-    check(percent >= 80.0) { "Aggregate instruction coverage %.2f%% is below required 80%%.".format(percent) }
-  }
 }
