@@ -1,18 +1,17 @@
-# Android CI/CD Pipeline - Automated Build & Test
 name: Android CI/CD
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  GRADLE_VERSION: '9.3.1'
+  GRADLE_VERSION: "9.3.1"
 
 defaults:
   run:
@@ -23,125 +22,98 @@ jobs:
     name: Build & Test Android App
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v6
-    - name: Set up JDK 17
-      uses: actions/setup-java@v5
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v6
-      with:
-        validate-wrappers: true
-    - name: Verify Gradle Wrapper
-      run: |
-        test -f gradle/wrapper/gradle-wrapper.jar
-        test -f gradle/wrapper/gradle-wrapper.properties
-        ./gradlew --version
-        ./gradlew -q properties >/dev/null
-        echo "Gradle wrapper resolved successfully."
-    - name: Write google-services.json from secret (if set)
-      run: |
-        if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
-          printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
-        fi
-    - name: Verify google-services.json (optional for CI validation)
-      run: |
-        if [ -f app/google-services.json ] && [ -s app/google-services.json ]; then
-          echo "google-services.json present."
-        else
-          echo "Notice: google-services.json is not available. Continuing because the Android project uses MissingGoogleServicesStrategy.WARN; Firebase configuration is not required for compile/test validation."
-        fi
-    - name: Create .env File
-      run: |
-        if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
-          printf '%s' "${{ secrets.ENV_FILE_CONTENT }}" > .env
-        else
-          : > .env
-          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+      - name: Checkout Code
+        uses: actions/checkout@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+      - name: Verify Gradle Wrapper
+        run: |
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          ./gradlew --version
+          ./gradlew -q properties >/dev/null
+      - name: Write google-services.json from secret (if set)
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
           fi
-        fi
-    - name: Run Unit Tests
-      run: ./gradlew :app:testDebugUnitTest
-    - name: Generate JVM/Robolectric Coverage
-      run: ./gradlew :app:jacocoDebugUnitTestReport
-    - name: Publish JVM/Robolectric Coverage Summary
-      run: |
-        python3 - <<'PY'
-        import os
-        import xml.etree.ElementTree as ET
-        from pathlib import Path
-
-        report = Path('app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml')
-        if not report.is_file():
-            raise SystemExit(f'JaCoCo report not found: {report}')
-
-        root = ET.parse(report).getroot()
-        counters = {c.attrib.get('type'): c for c in root.iter('counter')}
-        line = counters.get('LINE')
-        if line is None:
-            available = ', '.join(sorted(k for k in counters if k)) or 'none'
-            raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
-
-        def pct(counter):
-            missed = int(counter.attrib['missed'])
-            covered = int(counter.attrib['covered'])
-            total = covered + missed
-            return (covered * 100 / total if total else 0.0), covered, total
-
-        line_pct, line_covered, line_total = pct(line)
-        instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
-        branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
-        print(f'JVM/Robolectric line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
-        print(f'JVM/Robolectric instruction coverage: {instruction_pct:.2f}%')
-        print(f'JVM/Robolectric branch coverage: {branch_pct:.2f}%')
-
-        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
-            f.write('## JVM/Robolectric Coverage\n\n')
-            f.write('| Metric | Coverage |\n|---|---:|\n')
-            f.write(f'| Line | {line_pct:.2f}% ({line_covered}/{line_total}) |\n')
-            f.write(f'| Instruction | {instruction_pct:.2f}% |\n')
-            f.write(f'| Branch | {branch_pct:.2f}% |\n')
-        PY
-    - name: Run Lint
-      run: ./gradlew :app:lintDebug
-    - name: Run Detekt
-      run: ./gradlew :app:detekt
-    - name: Build Debug APK
-      run: ./gradlew :app:assembleDebug
-    - name: Build Release AAB (if signing is configured)
-      env:
-        KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-      run: |
-        if [ -z "$KEYSTORE_BASE64" ]; then
-          echo "Release signing secrets are not configured; skipping release AAB build."
-          exit 0
-        fi
-        echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-        chmod 600 release.keystore
-        export KEYSTORE_PATH="${{ github.workspace }}/release.keystore"
-        ./gradlew :app:bundleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
-    - name: Upload Debug APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
-    - name: Upload JVM/Robolectric Coverage Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-jvm-robolectric
-        path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
-    - name: Upload Release AAB Artifact
-      if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release-aab
-        path: app/build/outputs/bundle/release/app-release.aab
+      - name: Create .env File
+        run: |
+          if [ -n "${{ secrets.ENV_FILE_CONTENT }}" ]; then
+            printf '%s' "${{ secrets.ENV_FILE_CONTENT }}" > .env
+          else
+            : > .env
+            if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+              printf '%s\n' "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            fi
+          fi
+      - name: Run Unit Tests and Native AGP Coverage
+        run: ./gradlew :app:createDebugUnitTestCoverageReport
+      - name: Publish JVM/Robolectric Coverage Summary
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          report = Path('app/build/reports/coverage/test/debug/report.xml')
+          if not report.is_file():
+              raise SystemExit(f'AGP unit-test coverage XML not found: {report}')
+          root = ET.parse(report).getroot()
+          counters = {c.attrib.get('type'): c for c in root.iter('counter')}
+          line = counters.get('LINE')
+          if line is None:
+              raise SystemExit('AGP coverage XML contains no LINE counter')
+          covered = int(line.attrib['covered']); missed = int(line.attrib['missed']); total = covered + missed
+          pct = covered * 100 / total if total else 0.0
+          print(f'JVM/Robolectric line coverage: {pct:.2f}% ({covered}/{total})')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write(f'## JVM/Robolectric Coverage\n\nLine coverage: **{pct:.2f}% ({covered}/{total})**\n')
+          PY
+      - name: Run Lint
+        run: ./gradlew :app:lintDebug
+      - name: Run Detekt
+        run: ./gradlew :app:detekt
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug
+      - name: Build Release AAB (if signing is configured)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Release signing secrets are not configured; skipping release AAB build."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          chmod 600 release.keystore
+          export KEYSTORE_PATH="${{ github.workspace }}/release.keystore"
+          ./gradlew :app:bundleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload Release AAB Artifact (if built)
+        if: ${{ hashFiles('app/build/outputs/bundle/release/app-release.aab') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+      - name: Upload JVM/Robolectric Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-jvm-robolectric
+          path: app/build/reports/coverage/test/debug/
 
   instrumented-tests:
     name: Run Instrumented Android Tests
@@ -153,8 +125,8 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
@@ -168,13 +140,6 @@ jobs:
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
             printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
-          fi
-      - name: Verify google-services.json (optional for CI validation)
-        run: |
-          if [ -f app/google-services.json ] && [ -s app/google-services.json ]; then
-            echo "google-services.json present."
-          else
-            echo "Notice: google-services.json is not available. Continuing because the Android project uses MissingGoogleServicesStrategy.WARN; Firebase configuration is not required for compile/test validation."
           fi
       - name: Create .env File
         run: |
@@ -190,14 +155,14 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: coverage-jvm-robolectric
-          path: app/build/reports/jacoco/jacocoDebugUnitTestReport
+          path: app/build/reports/coverage/test/debug
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           test -e /dev/kvm
-      - name: Run Instrumented Tests via Android Emulator
+      - name: Run Instrumented Tests and Native AGP Coverage via Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -206,54 +171,37 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: ./gradlew :app:connectedDebugAndroidTest
-      - name: Generate Instrumented Coverage
-        run: ./gradlew :app:jacocoDebugAndroidTestReport
+          script: |
+            set -euo pipefail
+            ./gradlew :app:connectedDebugAndroidTest
+            ./gradlew :app:createDebugAndroidTestCoverageReport
       - name: Publish Instrumented Coverage Summary
         run: |
           python3 - <<'PY'
           import os
           import xml.etree.ElementTree as ET
           from pathlib import Path
-
-          report = Path('app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml')
+          report = Path('app/build/reports/coverage/androidTest/debug/connected/report.xml')
           if not report.is_file():
-              raise SystemExit(f'JaCoCo report not found: {report}')
-
+              raise SystemExit(f'AGP instrumented coverage XML not found: {report}')
           root = ET.parse(report).getroot()
           counters = {c.attrib.get('type'): c for c in root.iter('counter')}
           line = counters.get('LINE')
           if line is None:
-              available = ', '.join(sorted(k for k in counters if k)) or 'none'
-              raise SystemExit(f'LINE coverage counter missing; available counters: {available}')
-
-          def pct(counter):
-              missed = int(counter.attrib['missed'])
-              covered = int(counter.attrib['covered'])
-              total = covered + missed
-              return (covered * 100 / total if total else 0.0), covered, total
-
-          line_pct, line_covered, line_total = pct(line)
-          instruction_pct, _, _ = pct(counters['INSTRUCTION']) if counters.get('INSTRUCTION') is not None else (0.0, 0, 0)
-          branch_pct, _, _ = pct(counters['BRANCH']) if counters.get('BRANCH') is not None else (0.0, 0, 0)
-          print(f'Instrumented Android line coverage: {line_pct:.2f}% ({line_covered}/{line_total})')
-          print(f'Instrumented Android instruction coverage: {instruction_pct:.2f}%')
-          print(f'Instrumented Android branch coverage: {branch_pct:.2f}%')
-
+              raise SystemExit('AGP instrumented coverage XML contains no LINE counter')
+          covered = int(line.attrib['covered']); missed = int(line.attrib['missed']); total = covered + missed
+          pct = covered * 100 / total if total else 0.0
+          print(f'Instrumented Android line coverage: {pct:.2f}% ({covered}/{total})')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
-              f.write('## Instrumented Android Coverage\n\n')
-              f.write('| Metric | Coverage |\n|---|---:|\n')
-              f.write(f'| Line | {line_pct:.2f}% ({line_covered}/{line_total}) |\n')
-              f.write(f'| Instruction | {instruction_pct:.2f}% |\n')
-              f.write(f'| Branch | {branch_pct:.2f}% |\n')
+              f.write(f'## Instrumented Android Coverage\n\nLine coverage: **{pct:.2f}% ({covered}/{total})**\n')
           PY
       - name: Verify Aggregate Coverage >= 80%
         run: |
           python3 scripts/verify_aggregate_coverage.py \
-            app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml \
-            app/build/reports/jacoco/jacocoDebugAndroidTestReport/jacocoDebugAndroidTestReport.xml
+            app/build/reports/coverage/test/debug/report.xml \
+            app/build/reports/coverage/androidTest/debug/connected/report.xml
       - name: Upload Instrumented Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage-instrumented-android
-          path: app/build/reports/jacoco/jacocoDebugAndroidTestReport/
+          path: app/build/reports/coverage/androidTest/debug/connected/

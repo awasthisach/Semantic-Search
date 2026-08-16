@@ -78,9 +78,10 @@ open class SmartManagerRepository(
     suspend fun getFileByName(name: String) = dao.getFileByName(name)
 
     fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>> {
-        if (!isSemanticSearchAvailable) return kotlinx.coroutines.flow.flowOf(emptyList())
         if (query.isBlank()) return dao.getAllActiveFiles()
-        return dao.getAllActiveFiles().map { files ->
+        if (!isSemanticSearchAvailable) return dao.searchFiles(query)
+
+        return dao.getSemanticIndexedActiveFiles().map { files ->
             val queryVec = tfliteProvider.generateTextEmbedding(query)
             if (queryVec == null) {
                 files.filter { file ->
@@ -89,7 +90,6 @@ open class SmartManagerRepository(
             } else {
                 files.mapNotNull { file ->
                     val fileVec = tfliteProvider.stringToFloatArray(file.semanticEmbeddingString)
-                        ?: tfliteProvider.generateTextEmbedding("${file.name} ${file.ocrText} ${file.tags}")
                     if (fileVec != null) {
                         val sim = tfliteProvider.calculateCosineSimilarity(queryVec, fileVec)
                         val isTextMatch = file.name.contains(query, ignoreCase = true) || file.ocrText.contains(query, ignoreCase = true) || file.tags.contains(query, ignoreCase = true)
@@ -127,6 +127,7 @@ open class SmartManagerRepository(
                 val unhashed = dao.getUnhashedFiles()
                 if (unhashed.isEmpty()) return@launch
                 val isOcrEnabled = dao.getAllPlugins().first().find { it.pluginId == "ocr_engine" }?.isEnabled ?: true
+                val semanticModelAvailable = isSemanticSearchAvailable
                 val totalCount = unhashed.size
                 var processedCount = 0
                 unhashed.chunked(50).forEach { chunk ->
@@ -167,7 +168,7 @@ open class SmartManagerRepository(
                                 if (docFp.isNotBlank()) updated = updated.copy(visualSimilarityHash = docFp)
                             }
                         }
-                        if (!updated.semanticIndexed) {
+                        if (semanticModelAvailable && !updated.semanticIndexed) {
                             val textContent = "${updated.name} ${updated.ocrText} ${updated.tags}".trim()
                             val javaFile = if (!updated.path.startsWith("content://")) File(updated.path) else null
                             val embedding = if (javaFile != null && javaFile.exists() && javaFile.canRead()) {
