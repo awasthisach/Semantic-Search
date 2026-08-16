@@ -17,8 +17,13 @@ import javax.crypto.spec.GCMParameterSpec
  * Production security rule: if Android Keystore is unavailable or unusable,
  * Vault operations fail closed. An in-memory fallback key would make encrypted
  * files permanently undecryptable after process death and is therefore unsafe.
+ *
+ * The optional key provider exists only to make JVM/Robolectric tests deterministic;
+ * production construction uses the Android Keystore-backed default.
  */
-class KeystoreVaultManager {
+class KeystoreVaultManager(
+    private val testKeyProvider: (() -> SecretKey)? = null,
+) {
     companion object {
         private const val TAG = "KeystoreVaultManager"
         private const val KEY_ALIAS = "VVF_SMART_MANAGER_VAULT_KEY"
@@ -67,6 +72,7 @@ class KeystoreVaultManager {
     }
 
     private fun getSecretKey(): SecretKey {
+        testKeyProvider?.let { return it() }
         ensureSecretKeyExists()
         return try {
             (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
