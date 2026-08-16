@@ -46,8 +46,9 @@ class CloudSyncEngineTest {
     @Test
     fun missingFile_returnsNonRetryableError() = runTest {
         val engine = CloudSyncEngine(context, dao, authManager)
-
-        val result = engine.syncItem(item("${System.getProperty("java.io.tmpdir")}/does-not-exist-${System.nanoTime()}"))
+        val missingPath =
+            "${System.getProperty("java.io.tmpdir")}/does-not-exist-${System.nanoTime()}"
+        val result = engine.syncItem(item(missingPath))
 
         assertTrue(result is CloudSyncResult.Error)
         result as CloudSyncResult.Error
