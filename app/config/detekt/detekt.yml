@@ -2,3 +2,11 @@ naming:
   FunctionNaming:
     active: true
     ignoreAnnotated: ['Composable']
+
+style:
+  MaxLineLength:
+    active: false
+  EmptyElseBlock:
+    active: false
+  EmptyFunctionBlock:
+    active: false
