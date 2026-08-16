@@ -17,13 +17,19 @@ interface FileDao {
 
     @Query("SELECT * FROM files WHERE name = :name LIMIT 1")
     suspend fun getFileByName(name: String): FileItemEntity?
+
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND ocrText != '' ORDER BY dateModifiedMs DESC LIMIT 100")
     fun getOcrScannedFiles(): Flow<List<FileItemEntity>>
 
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND (name LIKE '%' || :query || '%' OR ocrText LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%') ORDER BY dateModifiedMs DESC LIMIT 100")
     fun searchSemanticFiles(query: String): Flow<List<FileItemEntity>>
+
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 ORDER BY dateModifiedMs DESC")
     fun getAllActiveFiles(): Flow<List<FileItemEntity>>
+
+    /** Only rows with a persisted semantic vector participate in semantic ranking. */
+    @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 AND semanticIndexed = 1 AND semanticEmbeddingString != '' ORDER BY dateModifiedMs DESC")
+    fun getSemanticIndexedActiveFiles(): Flow<List<FileItemEntity>>
 
     @Query("SELECT * FROM files WHERE isVault = 0 AND isRecycleBin = 0 ORDER BY dateModifiedMs DESC LIMIT 10")
     fun getRecentFiles(): Flow<List<FileItemEntity>>
@@ -32,11 +38,11 @@ interface FileDao {
     fun getCategoryStats(): Flow<List<CategoryStat>>
 
     @Query("""
-        SELECT * FROM files 
-        WHERE isVault = 0 AND isRecycleBin = 0 
-          AND (:category IS NULL OR category = :category) 
-          AND (:query = '' OR name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' OR ocrText LIKE '%' || :query || '%') 
-        ORDER BY dateModifiedMs DESC 
+        SELECT * FROM files
+        WHERE isVault = 0 AND isRecycleBin = 0
+          AND (:category IS NULL OR category = :category)
+          AND (:query = '' OR name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' OR ocrText LIKE '%' || :query || '%')
+        ORDER BY dateModifiedMs DESC
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getFilteredFilesPaged(category: String?, query: String, limit: Int, offset: Int): List<FileItemEntity>
@@ -154,11 +160,7 @@ interface FileDao {
     suspend fun reconcileStaleRecords(discoveredPaths: Set<String>) {
         val ordinaryFiles = getAllOrdinaryFilesDirect()
         val staleIds = ordinaryFiles.filter { it.path !in discoveredPaths }.map { it.id }
-        if (staleIds.isNotEmpty()) {
-            staleIds.chunked(900).forEach { chunk ->
-                deleteFilesByIds(chunk)
-            }
-        }
+        if (staleIds.isNotEmpty()) staleIds.chunked(900).forEach { chunk -> deleteFilesByIds(chunk) }
     }
 
     @Query("DELETE FROM files WHERE isRecycleBin = 1")
@@ -167,17 +169,29 @@ interface FileDao {
     @Query("SELECT * FROM files WHERE name = :name AND isVault = 1 LIMIT 1")
     suspend fun getVaultFileByName(name: String): FileItemEntity?
 
-    // Vault DAO
     @Query("SELECT * FROM vault_items ORDER BY encryptedAtMs DESC")
     fun getAllVaultItems(): Flow<List<VaultItemEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVaultItem(item: VaultItemEntity): Long
 
+    /** Commits the two related database records atomically after physical encryption succeeds. */
+    @androidx.room.Transaction
+    suspend fun commitVaultEncryption(vaultedFile: FileItemEntity, vaultItem: VaultItemEntity) {
+        updateFile(vaultedFile)
+        insertVaultItem(vaultItem)
+    }
+
+    /** Commits vault restoration metadata atomically after physical decryption succeeds. */
+    @androidx.room.Transaction
+    suspend fun commitVaultRestoration(restoredFile: FileItemEntity, vaultItemId: Long) {
+        updateFile(restoredFile)
+        deleteVaultItemById(vaultItemId)
+    }
+
     @Query("DELETE FROM vault_items WHERE id = :id")
     suspend fun deleteVaultItemById(id: Long)
 
-    // Cloud Sync DAO
     @Query("SELECT * FROM cloud_sync ORDER BY lastSyncedMs DESC")
     fun getCloudSyncItems(): Flow<List<CloudSyncItemEntity>>
 
@@ -187,7 +201,6 @@ interface FileDao {
     @Query("DELETE FROM cloud_sync WHERE id = :id")
     suspend fun deleteCloudSyncItem(id: Long)
 
-    // Plugins DAO
     @Query("SELECT * FROM plugins ORDER BY isCore DESC, name ASC")
     fun getAllPlugins(): Flow<List<PluginEntity>>
 

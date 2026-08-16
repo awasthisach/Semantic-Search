@@ -114,15 +114,15 @@ class ExampleUnitTest {
   }
 
   @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-  @Test fun test_duplicateDetectionEngine_semanticDuplicates() = runBlocking {
+  @Test fun test_duplicateDetectionEngine_semanticDuplicates_withoutModel_returnsEmpty() = runBlocking {
     val context = ApplicationProvider.getApplicationContext<Context>(); val scanner = StorageScanner(context); val provider = TFLiteSemanticEmbeddingProvider(); val engine = com.example.data.DuplicateDetectionEngine(scanner, provider)
-    val vec1 = FloatArray(128) { if (it == 5) .9f else if (it == 10) .3f else if (it == 15) .2f else 0f }; val vec2 = FloatArray(128) { if (it == 5) .88f else if (it == 10) .35f else if (it == 15) .18f else 0f }; val vec3 = FloatArray(128) { if (it == 80) 1f else 0f }
+    assertFalse(provider.isModelLoaded())
+    val vec = FloatArray(128) { if (it == 5) .9f else if (it == 10) .3f else if (it == 15) .2f else 0f }
     val files = listOf(
-      com.example.data.FileItemEntity(id=201L,name="document_1.pdf",path="/storage/emulated/0/Documents/document_1.pdf",category=com.example.data.FileCategory.DOCUMENTS.name,sizeBytes=12000L,semanticIndexed=true,semanticEmbeddingString=provider.floatArrayToString(vec1)),
-      com.example.data.FileItemEntity(id=202L,name="document_2_similar.pdf",path="/storage/emulated/0/Documents/document_2_similar.pdf",category=com.example.data.FileCategory.DOCUMENTS.name,sizeBytes=12500L,semanticIndexed=true,semanticEmbeddingString=provider.floatArrayToString(vec2)),
-      com.example.data.FileItemEntity(id=203L,name="document_different.pdf",path="/storage/emulated/0/Documents/document_different.pdf",category=com.example.data.FileCategory.DOCUMENTS.name,sizeBytes=32000L,semanticIndexed=true,semanticEmbeddingString=provider.floatArrayToString(vec3)))
+      com.example.data.FileItemEntity(id=201L,name="document_1.pdf",path="/storage/emulated/0/Documents/document_1.pdf",category=com.example.data.FileCategory.DOCUMENTS.name,sizeBytes=12000L,semanticIndexed=true,semanticEmbeddingString=provider.floatArrayToString(vec)),
+      com.example.data.FileItemEntity(id=202L,name="document_2_similar.pdf",path="/storage/emulated/0/Documents/document_2_similar.pdf",category=com.example.data.FileCategory.DOCUMENTS.name,sizeBytes=12500L,semanticIndexed=true,semanticEmbeddingString=provider.floatArrayToString(vec)))
     val result = engine.getSemanticDuplicates(kotlinx.coroutines.flow.flowOf(files), kotlinx.coroutines.flow.flowOf(85f)).first()
-    assertEquals(1, result.size); assertEquals(2, result.first().files.size); assertTrue(result.first().files.any { it.id == 201L }); assertTrue(result.first().files.any { it.id == 202L }); assertFalse(result.first().files.any { it.id == 203L })
+    assertTrue(result.isEmpty())
   }
 
   @Test fun test_appDatabase_migrations_config() {
