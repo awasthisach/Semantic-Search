@@ -2,6 +2,8 @@ package com.example.data
 
 import android.content.Context
 import com.example.security.KeystoreVaultManager
+import javax.crypto.SecretKey
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -64,10 +66,17 @@ class VaultRepositoryTest {
         override fun getAllPlugins(): Flow<List<PluginEntity>> = flowOf(emptyList())
     }
 
-    @Before fun setUp() { context = RuntimeEnvironment.getApplication(); fakeDao = FakeFileDao(); keystoreVaultManager = KeystoreVaultManager(); repository = VaultRepository(context, fakeDao, keystoreVaultManager) }
+    @Before
+    fun setUp() {
+        context = RuntimeEnvironment.getApplication()
+        fakeDao = FakeFileDao()
+        keystoreVaultManager = KeystoreVaultManager { TEST_KEY }
+        repository = VaultRepository(context, fakeDao, keystoreVaultManager)
+    }
 
     @Test fun testEncryptToVaultSuccess(): Unit = runBlocking {
-        val tempFile = java.io.File(context.filesDir, "secret.png"); tempFile.writeText("sensitive secure data to encrypt")
+        val tempFile = java.io.File(context.filesDir, "secret.png")
+        tempFile.writeText("sensitive secure data to encrypt")
         val file = FileItemEntity(id = 5, name = "secret.png", path = tempFile.absolutePath, category = "IMAGES", sizeBytes = tempFile.length())
         repository.encryptToVault(file)
         assertNotNull(fakeDao.updatedFile); assertTrue(fakeDao.updatedFile!!.isVault); assertNotNull(fakeDao.insertedVaultItem); assertEquals("secret.png", fakeDao.insertedVaultItem!!.originalName); assertFalse(tempFile.exists())
@@ -81,5 +90,9 @@ class VaultRepositoryTest {
         val success = repository.unlockFromVault(vaultItem!!, originalFile); assertTrue(success)
         assertNotNull(fakeDao.updatedFile); assertFalse(fakeDao.updatedFile!!.isVault); assertEquals(1L, fakeDao.deletedVaultItemId); assertTrue(tempFile.exists()); assertEquals("sensitive data to encrypt", tempFile.readText()); tempFile.delete()
         Unit
+    }
+
+    companion object {
+        private val TEST_KEY: SecretKey = SecretKeySpec(ByteArray(32) { (it + 2).toByte() }, "AES")
     }
 }
