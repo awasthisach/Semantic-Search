@@ -36,6 +36,7 @@ class KeystoreVaultManager(
         private const val PBKDF2_MAX_ITERATIONS = 2_000_000
         private const val PBKDF2_SALT_BYTES = 16
         private const val PBKDF2_KEY_BYTES = 32
+        private const val BITS_PER_BYTE = 8
     }
 
     private val keyStore: KeyStore by lazy {
@@ -76,9 +77,7 @@ class KeystoreVaultManager(
         ensureSecretKeyExists()
         return try {
             (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
-                ?: throw IllegalStateException("Android Keystore Vault key is unavailable")
-        } catch (e: IllegalStateException) {
-            throw e
+                ?: error("Android Keystore Vault key is unavailable")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to access Android Keystore Vault key", e)
             throw IllegalStateException("Secure Vault key access failed", e)
@@ -152,7 +151,12 @@ class KeystoreVaultManager(
     }
 
     private fun pbkdf2(pin: String, salt: ByteArray, iterations: Int): ByteArray? = try {
-        val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iterations, PBKDF2_KEY_BYTES * 8)
+        val spec = javax.crypto.spec.PBEKeySpec(
+            pin.toCharArray(),
+            salt,
+            iterations,
+            PBKDF2_KEY_BYTES * BITS_PER_BYTE,
+        )
         try {
             javax.crypto.SecretKeyFactory
                 .getInstance("PBKDF2WithHmacSHA256")
