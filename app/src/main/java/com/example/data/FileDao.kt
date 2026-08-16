@@ -160,11 +160,7 @@ interface FileDao {
     suspend fun reconcileStaleRecords(discoveredPaths: Set<String>) {
         val ordinaryFiles = getAllOrdinaryFilesDirect()
         val staleIds = ordinaryFiles.filter { it.path !in discoveredPaths }.map { it.id }
-        if (staleIds.isNotEmpty()) {
-            staleIds.chunked(900).forEach { chunk ->
-                deleteFilesByIds(chunk)
-            }
-        }
+        if (staleIds.isNotEmpty()) staleIds.chunked(900).forEach { chunk -> deleteFilesByIds(chunk) }
     }
 
     @Query("DELETE FROM files WHERE isRecycleBin = 1")
@@ -178,6 +174,20 @@ interface FileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVaultItem(item: VaultItemEntity): Long
+
+    /** Commits the two related database records atomically after physical encryption succeeds. */
+    @androidx.room.Transaction
+    suspend fun commitVaultEncryption(vaultedFile: FileItemEntity, vaultItem: VaultItemEntity) {
+        updateFile(vaultedFile)
+        insertVaultItem(vaultItem)
+    }
+
+    /** Commits vault restoration metadata atomically after physical decryption succeeds. */
+    @androidx.room.Transaction
+    suspend fun commitVaultRestoration(restoredFile: FileItemEntity, vaultItemId: Long) {
+        updateFile(restoredFile)
+        deleteVaultItemById(vaultItemId)
+    }
 
     @Query("DELETE FROM vault_items WHERE id = :id")
     suspend fun deleteVaultItemById(id: Long)
