@@ -187,7 +187,7 @@ jobs:
             fi
           fi
       - name: Download JVM/Robolectric Coverage
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: coverage-jvm-robolectric
           path: app/build/reports/jacoco/jacocoDebugUnitTestReport
